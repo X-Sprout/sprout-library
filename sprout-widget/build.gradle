@@ -1,0 +1,16 @@
+apply from: '../basic.gradle'
+
+version = '1.0.0-SNAPSHOT'
+
+packing = 'aar'
+
+android {
+    defaultConfig {
+        versionCode 100
+        versionName project.version
+    }
+}
+
+dependencies {
+
+}

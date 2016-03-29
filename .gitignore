@@ -1,0 +1,11 @@
+.DS_Store
+Thumbs.db
+.gradle
+/local.properties
+/captures
+/build
+/.idea
+/bin
+*.iml
+*.ipr
+*.iws

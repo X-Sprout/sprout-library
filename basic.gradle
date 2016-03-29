@@ -1,0 +1,131 @@
+apply plugin: 'com.android.library'
+apply plugin: 'maven-publish'
+
+android {
+    compileSdkVersion 23
+
+    buildToolsVersion "23.0.2"
+
+    defaultConfig {
+        minSdkVersion 10
+        targetSdkVersion 23
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            minifyEnabled false
+            zipAlignEnabled true
+            shrinkResources false
+            multiDexEnabled false
+        }
+        release {
+            debuggable false
+            minifyEnabled false
+            zipAlignEnabled true
+            shrinkResources true
+            multiDexEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/NOTICE'
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+}
+
+dependencies {
+    provided 'com.android.support:appcompat-v7:23.1.1'
+    if (!project.name.equals('sprout-core')) {
+        compile project(':sprout-core')
+    }
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifact sourceJar
+            if (packing == 'jar') {
+                artifact encodeJar
+            }
+            if (packing == 'aar') {
+                artifact "${project.buildDir}/outputs/aar/${project.name}-release.aar"
+            }
+            // Deploy pom.xml
+            pom.withXml {
+                def root = it.asNode().appendNode('dependencies')
+                configurations.provided.allDependencies.each {
+                    generateDependency(root, it, 'provided')
+                }
+                configurations.compile.allDependencies.each {
+                    generateDependency(root, it)
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            credentials {
+                username = artifactory_username
+                password = artifactory_password
+            }
+            if (project.version.endsWith('-SNAPSHOT')) {
+                url artifactory_snapshot
+            } else {
+                url artifactory_released
+            }
+        }
+    }
+}
+
+task sourceJar(type: Jar, dependsOn: assemble) {
+    classifier = 'sources'
+    from android.sourceSets.main.java.srcDirs
+}
+
+task encodeJar(type: Jar, dependsOn: assemble) {
+    from './build/intermediates/classes/release'
+    exclude '**/R.class'
+    exclude '**/R\$*.class'
+    exclude '**/BuildConfig.class'
+    exclude '**/BuildConfig\$*.class'
+}
+
+tasks.withType(Jar) {
+    manifest.attributes(
+            'Implementation-Title': project.name,
+            'Implementation-Version': project.version,
+            'Implementation-Vendor': 'Sprout-Library\'s Team',
+            'Implementation-Vendor-Id': 'sprout-library.team'
+    )
+}
+
+def generateDependency(root, rely) {
+    generateDependency(root, rely, '');
+}
+
+def generateDependency(root, rely, scope) {
+    def dependencyNode = root.appendNode('dependency')
+    dependencyNode.appendNode('groupId', rely.group)
+    dependencyNode.appendNode('artifactId', rely.name)
+    dependencyNode.appendNode('version', rely.version)
+    if (!''.equals(scope)) {
+        dependencyNode.appendNode('scope', scope)
+    }
+    if (rely.excludeRules.size() > 0) {
+        def exclusionsNode = dependencyNode.appendNode('exclusions')
+        rely.excludeRules.each { rule ->
+            def exclusionNode = exclusionsNode.appendNode('exclusion')
+            exclusionNode.appendNode('groupId', rule.group)
+            exclusionNode.appendNode('artifactId', rule.module)
+        }
+    }
+}

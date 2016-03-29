@@ -1,0 +1,25 @@
+buildscript {
+    repositories {
+        maven { url 'http://maven.oschina.net/content/groups/public/' }
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:1.5.0'
+    }
+}
+
+subprojects {
+    group = 'org.sprout'
+}
+
+allprojects {
+    ext {
+        packing = 'jar'
+    }
+    repositories {
+        maven { url 'http://maven.oschina.net/content/groups/public/' }
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

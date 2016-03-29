@@ -1,0 +1,15 @@
+apply from: '../basic.gradle'
+
+version = '1.0.0-SNAPSHOT'
+
+android {
+    defaultConfig {
+        versionCode 100
+        versionName project.version
+    }
+}
+
+dependencies {
+    compile 'io.reactivex:rxjava:1.1.0'
+    compile 'de.ruedigermoeller:fst:2.45'
+}

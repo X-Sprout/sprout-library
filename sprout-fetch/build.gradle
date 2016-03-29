@@ -1,0 +1,15 @@
+apply from: '../basic.gradle'
+
+version = '1.0.0-SNAPSHOT'
+
+android {
+    defaultConfig {
+        versionCode 100
+        versionName project.version
+    }
+}
+
+dependencies {
+    compile project(':sprout-cache')
+    compile 'com.squareup.okhttp3:okhttp:3.2.0'
+}
