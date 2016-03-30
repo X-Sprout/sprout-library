@@ -244,6 +244,30 @@ public final class AppUtils {
     }
 
     /**
+     * 检测应用是否安装
+     *
+     * @param packet 应用包名
+     * @return 是否安装
+     * @author Wythe
+     */
+    public static boolean isInstalled(final String packet) {
+        final Context context = SproutLib.getContext();
+        if (context == null) {
+            return false;
+        }
+        final PackageManager packageManager = context.getPackageManager();
+        if (packageManager == null) {
+            return false;
+        }
+        try {
+            packageManager.getPackageInfo(packet, PackageManager.GET_ACTIVITIES);
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * 检测服务是否运行
      *
      * @param clazz 服务类

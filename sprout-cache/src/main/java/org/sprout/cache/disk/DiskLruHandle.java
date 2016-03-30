@@ -14,6 +14,7 @@ import org.sprout.core.assist.SerialUtils;
 import org.sprout.core.assist.StringUtils;
 import org.sprout.core.logging.Lc;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -28,6 +29,7 @@ import java.nio.ByteBuffer;
 public final class DiskLruHandle<TYPE> implements CacheHandle<TYPE> {
 
     // 块区大小
+    private final static int BUF_LONG = 8;
     private final static int BUF_SIZE = 1024;
 
     // 缓存类型
@@ -316,26 +318,35 @@ public final class DiskLruHandle<TYPE> implements CacheHandle<TYPE> {
         if (!StringUtils.isEmpty(key)) {
             final InputStream stream = this.getStream(key);
             if (stream != null) {
-                final ByteBuffer buffer = ByteBuffer.allocate(BUF_SIZE);
+                final ByteArrayOutputStream output = new ByteArrayOutputStream(BUF_SIZE);
                 try {
+                    int len;
                     final byte[] tmp = new byte[BUF_SIZE];
-                    while (stream.read(tmp) != -1) {
-                        buffer.put(tmp);
+                    while ((len = stream.read(tmp)) != -1) {
+                        output.write(tmp, 0, len);
                     }
-                    buffer.flip();
                 } catch (Exception e) {
-                    buffer.clear();
+                    output.reset();
                     if (Lc.E) {
                         Lc.t(SproutLib.name).e(e);
                     }
                 } finally {
+                    try {
+                        output.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
                     try {
                         stream.close();
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
                 }
-                return buffer;
+                // 字节格式化
+                final byte[] bytes = output.toByteArray();
+                if (bytes.length > 0) {
+                    return ByteBuffer.wrap(bytes);
+                }
             }
         }
         return null;
@@ -377,11 +388,14 @@ public final class DiskLruHandle<TYPE> implements CacheHandle<TYPE> {
     // 设置过期时间
     private ByteBuffer setExpire(final int out, final byte... val) {
         if (val != null) {
-            final ByteBuffer buf = ByteBuffer.allocate(BUF_SIZE).putLong(out > 0 ? System.currentTimeMillis() + out : 0L).put(val);
-            if (buf != null) {
-                buf.flip();
+            final int len = val.length;
+            if (len > 0) {
+                final ByteBuffer buf = ByteBuffer.allocate(BUF_LONG + len).putLong(out > 0 ? System.currentTimeMillis() + out : 0L).put(val);
+                if (buf != null) {
+                    buf.flip();
+                }
+                return buf;
             }
-            return buf;
         }
         return null;
     }

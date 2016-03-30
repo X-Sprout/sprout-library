@@ -41,4 +41,44 @@ public final class DevUtils {
         return false;
     }
 
+    /**
+     * 获得设备IMEI号码
+     *
+     * @return IMEI号码
+     * @author Wythe
+     */
+    public static String getImei() {
+        final TelephonyManager telephonyManager = DevManager.Instance.getTelephony();
+        if (telephonyManager == null) {
+            return null;
+        }
+        return telephonyManager.getDeviceId();
+    }
+
+    /**
+     * 获得设备IMSI号码
+     *
+     * @return IMSI号码
+     * @author Wythe
+     */
+    public static String getImsi() {
+        final TelephonyManager telephonyManager = DevManager.Instance.getTelephony();
+        if (telephonyManager == null) {
+            return null;
+        }
+        return telephonyManager.getSubscriberId();
+    }
+
+    private enum DevManager {
+        Instance;
+
+        final TelephonyManager getTelephony() {
+            final Context context = SproutLib.getContext();
+            if (context == null) {
+                return null;
+            }
+            return (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+        }
+    }
+
 }
