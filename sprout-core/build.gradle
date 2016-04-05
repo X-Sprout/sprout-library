@@ -10,6 +10,6 @@ android {
 }
 
 dependencies {
-    compile 'io.reactivex:rxjava:1.1.0'
+    compile 'io.reactivex:rxjava:1.1.2'
     compile 'de.ruedigermoeller:fst:2.45'
 }
