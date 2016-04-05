@@ -320,13 +320,13 @@ public final class SaveService {
      */
     public final static class Promiser extends FetchPromiser<Promiser, SaveProperty, SaveListener> {
 
-        private final boolean hopeApprove;
+        private boolean hopeApprove;
 
-        private final int saveTimeout;
+        private final int saveRetry;
 
         private final int savePrior;
 
-        private final int saveRetry;
+        private final int saveTimeout;
 
         private final String saveUrl;
 
@@ -418,6 +418,8 @@ public final class SaveService {
          */
         public Promiser cancel() {
             if (this.hopeApprove) {
+                this.hopeApprove = false;
+                // 清除下载
                 Operator.Instance.cancelDownload(this.taskId);
             }
             return this;
