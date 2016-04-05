@@ -107,7 +107,7 @@ final class SaveExecutor {
                 }
             }
             if (Lc.D) {
-                Lc.t(SproutLib.name).d("FetchService save error: " + saveId + " -> " + FetchError.SAVETASK_CONFLICT_ERR.getMessage());
+                Lc.t(SproutLib.name).d("FetchService save error: " + saveId + " -> " + saveError.getMessage());
             }
         }
     }
@@ -437,17 +437,21 @@ final class SaveExecutor {
                             return;
                         }
                     } else {
-                        recorder.updateSaveStatus(property, FetchStatus.ERROR);
-                        try {
-                            subscriber.onCompleted();
-                        } catch (Exception e) {
-                            if (Lc.E) {
-                                Lc.t(SproutLib.name).e(e);
+                        if (property.getSaveSize() > 0) {
+                            recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                            try {
+                                subscriber.onCompleted();
+                            } catch (Exception e) {
+                                if (Lc.E) {
+                                    Lc.t(SproutLib.name).e(e);
+                                }
+                            } finally {
+                                SaveExecutor.reportError(scheduler.saveId, FetchError.FILESIZE_LOST_ERR);
                             }
-                        } finally {
-                            SaveExecutor.reportError(scheduler.saveId, FetchError.FILESIZE_LOST_ERR);
+                            return;
+                        } else {
+                            tempFile.delete();
                         }
-                        return;
                     }
                 } else {
                     // 更新缓存大小
