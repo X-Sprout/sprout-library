@@ -164,7 +164,7 @@ final class DiskLruCache implements Closeable {
     /**
      * This cache uses a single background thread to evict entries.
      */
-    final ThreadPoolExecutor executorService = new ThreadPoolExecutor(0, 1, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
+    final ThreadPoolExecutor executorService = new ThreadPoolExecutor(0, 3, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
 
     private final Callable<Void> cleanupCallable = new Callable<Void>() {
         public Void call() throws Exception {
@@ -308,16 +308,19 @@ final class DiskLruCache implements Closeable {
         Entry entry = lruEntries.get(key);
         if (entry == null) {
             entry = new Entry(key);
-            lruEntries.put(key, entry);
         }
 
         if (secondSpace != -1 && firstSpace == CLEAN.length() && line.startsWith(CLEAN)) {
             String[] parts = line.substring(secondSpace + 1).split(" ");
             entry.readable = true;
-            entry.currentEditor = null;
             entry.setLengths(parts);
+            if (!lruEntries.containsKey(key)) {
+                lruEntries.put(key, entry);
+            }
         } else if (secondSpace == -1 && firstSpace == DIRTY.length() && line.startsWith(DIRTY)) {
-            entry.currentEditor = new Editor(entry);
+            for (int t = 0; t < valueCount; t++) {
+                deleteIfExists(entry.getDirtyFile(t));
+            }
         } else if (secondSpace == -1 && firstSpace == READ.length() && line.startsWith(READ)) {
             // This work was already done by calling lruEntries.get().
         } else {
@@ -340,7 +343,6 @@ final class DiskLruCache implements Closeable {
             } else {
                 entry.currentEditor = null;
                 for (int t = 0; t < valueCount; t++) {
-                    deleteIfExists(entry.getCleanFile(t));
                     deleteIfExists(entry.getDirtyFile(t));
                 }
                 i.remove();
@@ -844,7 +846,6 @@ final class DiskLruCache implements Closeable {
         public void commit() throws IOException {
             if (hasErrors) {
                 completeEdit(this, false);
-                remove(entry.key); // The previous entry is stale.
             } else {
                 completeEdit(this, true);
             }

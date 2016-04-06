@@ -395,46 +395,38 @@ final class SaveExecutor {
                 }
                 if (tempFile.exists()) {
                     if (property.getFileSize() > 0) {
-                        if (property.getSaveSize() != tempFile.length()) {
-                            // 临时文件数据不匹配
-                            recorder.updateSaveStatus(property, FetchStatus.ERROR);
-                            try {
-                                subscriber.onCompleted();
-                            } catch (Exception e) {
-                                if (Lc.E) {
-                                    Lc.t(SproutLib.name).e(e);
-                                }
-                            } finally {
-                                SaveExecutor.reportError(scheduler.saveId, FetchError.TEMPFILE_DATA_ERR);
-                            }
-                            return;
-                        }
-                        if (property.getSaveSize() == property.getFileSize()) {
-                            // 临时文件已成功下载
-                            if (tempFile.renameTo(saveFile)) {
-                                property = recorder.updateSaveStatus(property, FetchStatus.FINISH);
-                                try {
-                                    subscriber.onCompleted();
-                                } catch (Exception e) {
-                                    if (Lc.E) {
-                                        Lc.t(SproutLib.name).e(e);
+                        final long tempSize = tempFile.length();
+                        if (property.getSaveSize() == tempSize) {
+                            if (property.getSaveSize() == property.getFileSize()) {
+                                // 临时文件已成功下载
+                                if (tempFile.renameTo(saveFile)) {
+                                    property = recorder.updateSaveStatus(property, FetchStatus.FINISH);
+                                    try {
+                                        subscriber.onCompleted();
+                                    } catch (Exception e) {
+                                        if (Lc.E) {
+                                            Lc.t(SproutLib.name).e(e);
+                                        }
+                                    } finally {
+                                        SaveExecutor.reportFinish(property);
                                     }
-                                } finally {
-                                    SaveExecutor.reportFinish(property);
-                                }
-                            } else {
-                                recorder.updateSaveStatus(property, FetchStatus.ERROR);
-                                try {
-                                    subscriber.onCompleted();
-                                } catch (Exception e) {
-                                    if (Lc.E) {
-                                        Lc.t(SproutLib.name).e(e);
+                                } else {
+                                    recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                                    try {
+                                        subscriber.onCompleted();
+                                    } catch (Exception e) {
+                                        if (Lc.E) {
+                                            Lc.t(SproutLib.name).e(e);
+                                        }
+                                    } finally {
+                                        SaveExecutor.reportError(scheduler.saveId, FetchError.TEMPFILE_CONVERT_ERR);
                                     }
-                                } finally {
-                                    SaveExecutor.reportError(scheduler.saveId, FetchError.TEMPFILE_CONVERT_ERR);
                                 }
+                                return;
                             }
-                            return;
+                        } else {
+                            // 同步缓存大小
+                            property = recorder.updateSaveSize(property, tempSize);
                         }
                     } else {
                         if (property.getSaveSize() > 0) {
@@ -496,7 +488,7 @@ final class SaveExecutor {
             return;
         }
         // 发起请求
-        Response httpResponse;
+        final Response httpResponse;
         try {
             httpResponse = (HTTP_CLIENT.newBuilder().connectTimeout((long) (scheduler.saveTimeout > 0 ? scheduler.saveTimeout : SAVE_TIMEOUT), TimeUnit.MILLISECONDS).build()).newCall(
                     new Request.Builder().url(scheduler.saveUrl).addHeader("Range", String.format("bytes=%d-", (property.getFileSize() > 0 ? property.getSaveSize() : 0))).build()
