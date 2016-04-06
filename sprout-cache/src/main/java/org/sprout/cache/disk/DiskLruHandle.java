@@ -301,19 +301,12 @@ public final class DiskLruHandle<TYPE> implements CacheHandle<TYPE> {
                                         Lc.t(SproutLib.name).e(e);
                                     }
                                 }
-                                return;
                             } finally {
                                 try {
                                     stream.close();
                                 } catch (Exception e) {
                                     e.printStackTrace();
                                 }
-                            }
-                            // 刷新缓存
-                            try {
-                                this.mDiskLruCache.flush();
-                            } catch (Exception e) {
-                                e.printStackTrace();
                             }
                         }
                     }
