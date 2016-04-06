@@ -18,11 +18,10 @@ import org.sprout.fetch.spec.FetchPrior;
 import org.sprout.fetch.spec.FetchStatus;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import rx.Observable;
 import rx.functions.Action0;
@@ -61,7 +60,7 @@ public final class DroidSaveService extends Service {
 
     private final Deque<SaveScheduler> mSchedulerList = new LinkedList<>();
 
-    private final Map<String, SaveSubscription> mSubscriptionMap = new HashMap<>();
+    private final Map<String, SaveSubscription> mSubscriptionMap = new ConcurrentHashMap<>();
 
     @Override
     public int onStartCommand(final Intent intent, final int flags, final int startId) {
@@ -139,34 +138,41 @@ public final class DroidSaveService extends Service {
             this.mSaveTimer.stop();
         }
         try {
-            synchronized (DroidSaveService.this) {
-                this.mSchedulerList.clear();
-                this.stopSaveSubscription();
-                if (this.mSaveRecorder != null) {
-                    if (!this.mSaveRecorder.isShut()) {
-                        try {
-                            this.mSaveRecorder.mCacheHandle.flush();
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                        try {
-                            this.mSaveRecorder.mCacheHandle.close();
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    this.mSaveRecorder = null;
-                }
-            }
-            if (Lc.D) {
-                Lc.t(SproutLib.name).d("FetchService save free");
-            }
+            this.mSchedulerList.clear();
         } catch (Exception e) {
             if (Lc.E) {
-                Lc.t(SproutLib.name).e("FetchService save free error.", e);
+                Lc.t(SproutLib.name).e("FetchService save free queue error.", e);
             }
-        } finally {
-            super.onDestroy();
+        }
+        try {
+            this.stopSaveSubscription();
+        } catch (Exception e) {
+            this.mSubscriptionMap.clear();
+            if (Lc.E) {
+                Lc.t(SproutLib.name).e("FetchService save free tasks error.", e);
+            }
+        }
+        if (this.mSaveRecorder != null) {
+            if (!this.mSaveRecorder.isShut()) {
+                try {
+                    this.mSaveRecorder.mCacheHandle.flush();
+                } catch (Exception e) {
+                    if (Lc.E) {
+                        Lc.t(SproutLib.name).e("FetchService save free flash error.", e);
+                    }
+                }
+                try {
+                    this.mSaveRecorder.mCacheHandle.close();
+                } catch (Exception e) {
+                    if (Lc.E) {
+                        Lc.t(SproutLib.name).e("FetchService save free cache error.", e);
+                    }
+                }
+            }
+            this.mSaveRecorder = null;
+        }
+        if (Lc.D) {
+            Lc.t(SproutLib.name).d("FetchService save free.");
         }
     }
 
@@ -390,9 +396,7 @@ public final class DroidSaveService extends Service {
             final Observable<SaveProperty> observable = SaveExecutor.observableDownLoad(saveRecorder, saveScheduler, new Action0() {
                 @Override
                 public void call() {
-                    synchronized (DroidSaveService.this) {
-                        mSubscriptionMap.remove(saveScheduler.saveId);
-                    }
+                    mSubscriptionMap.remove(saveScheduler.saveId);
                     if (Lc.D) {
                         Lc.t(SproutLib.name).d("FetchService save close: " + saveScheduler.saveId);
                     }
@@ -412,11 +416,13 @@ public final class DroidSaveService extends Service {
         @Override
         public void onTime() {
             if (mSaveRecorder != null && !mSaveRecorder.isShut()) {
-                synchronized (DroidSaveService.this) {
-                    if (FetchService.getSaveThread() > mSubscriptionMap.size() && mSchedulerList.size() > 0) {
-                        final SaveScheduler saveScheduler = mSchedulerList.removeLast();
-                        if (saveScheduler != null) {
-                            registSaveSubscription(mSaveRecorder, saveScheduler);
+                if (FetchService.getSaveThread() > mSubscriptionMap.size()) {
+                    synchronized (DroidSaveService.this) {
+                        if (mSchedulerList.size() > 0) {
+                            final SaveScheduler saveScheduler = mSchedulerList.removeLast();
+                            if (saveScheduler != null) {
+                                registSaveSubscription(mSaveRecorder, saveScheduler);
+                            }
                         }
                     }
                 }

@@ -286,25 +286,34 @@ public final class DiskLruHandle<TYPE> implements CacheHandle<TYPE> {
                         if (stream != null) {
                             buf.get(bytes = new byte[l]);
                             try {
-                                stream.write(bytes);
+                                stream.write(
+                                    bytes
+                                );
                                 stream.flush();
                                 editor.commit();
                             } catch (Exception e) {
                                 try {
                                     editor.abort();
-                                } catch (IOException t) {
+                                } catch (Exception t) {
                                     t.printStackTrace();
                                 } finally {
                                     if (Lc.E) {
                                         Lc.t(SproutLib.name).e(e);
                                     }
                                 }
+                                return;
                             } finally {
                                 try {
                                     stream.close();
-                                } catch (IOException e) {
+                                } catch (Exception e) {
                                     e.printStackTrace();
                                 }
+                            }
+                            // 刷新缓存
+                            try {
+                                this.mDiskLruCache.flush();
+                            } catch (Exception e) {
+                                e.printStackTrace();
                             }
                         }
                     }
@@ -333,12 +342,12 @@ public final class DiskLruHandle<TYPE> implements CacheHandle<TYPE> {
                 } finally {
                     try {
                         output.close();
-                    } catch (IOException e) {
+                    } catch (Exception e) {
                         e.printStackTrace();
                     }
                     try {
                         stream.close();
-                    } catch (IOException e) {
+                    } catch (Exception e) {
                         e.printStackTrace();
                     }
                 }

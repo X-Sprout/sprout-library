@@ -14,11 +14,9 @@ import org.sprout.fetch.spec.FetchError;
 import org.sprout.fetch.spec.FetchStatus;
 
 import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.io.RandomAccessFile;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -45,6 +43,8 @@ final class SaveExecutor {
     private final static int SAVE_TIMEOUT = 15000;
     // 下载超时时长
     private final static long SAVE_DORMANT = 5000;
+    // 文件输出模式
+    private final static String MODE_OUTPUT = "rw";
     // 临时文件后缀
     private final static String TEMP_SUFFIX = ".fstmp";
     // 网络请求客户端
@@ -600,9 +600,9 @@ final class SaveExecutor {
             fileSize += (total = fstmp);
         }
         // 保存下载文件
-        BufferedOutputStream bos;
+        final RandomAccessFile outer;
         try {
-            bos = new BufferedOutputStream(new FileOutputStream(tempFile, true), SIZE_BUFFER);
+            (outer = new RandomAccessFile(tempFile, MODE_OUTPUT)).seek(total);
         } catch (Exception t) {
             recorder.updateSaveStatus(property, FetchStatus.ERROR);
             try {
@@ -618,9 +618,9 @@ final class SaveExecutor {
             }
             return;
         }
-        if (bos != null) {
+        if (outer != null) {
             // 首次下载文件
-            if (property.getFileSize() <= 0) {
+            if (property.getFileSize() < 1) {
                 property = recorder.updateFileSize(property, fileSize);
             }
             // 更新下载状态
@@ -645,7 +645,7 @@ final class SaveExecutor {
                 }
                 count -= begin;
                 fstmp += count;
-                bos.write(buf, begin, count);
+                outer.write(buf, begin, count);
                 property = recorder.updateSaveSize(property, fstmp);
                 // 进度更新
                 if (subscriber != null) {
@@ -680,18 +680,13 @@ final class SaveExecutor {
             return;
         } finally {
             try {
-                bos.flush();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            try {
                 bis.close();
-            } catch (IOException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
             }
             try {
-                bos.close();
-            } catch (IOException e) {
+                outer.close();
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }

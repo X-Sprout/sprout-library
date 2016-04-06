@@ -136,13 +136,13 @@ public final class SaveService {
 
         private CacheHandle<Map> mCacheHandle;
 
-        private ServiceConnection mServiceConnection;
+        private ServiceConnection mServiceConnect;
 
         private void initService() {
             final Context context = SproutLib.getContext();
             if (context != null) {
-                if (this.mServiceConnection == null) {
-                    this.mServiceConnection = new ServiceConnection() {
+                if (this.mServiceConnect == null) {
+                    this.mServiceConnect = new ServiceConnection() {
                         @Override
                         public void onServiceConnected(final ComponentName name, final IBinder service) {
                             if (Lc.D) {
@@ -158,7 +158,7 @@ public final class SaveService {
                         }
                     };
                 }
-                context.bindService(new Intent(context, DroidSaveService.class), this.mServiceConnection, ContextWrapper.BIND_AUTO_CREATE);
+                context.bindService(new Intent(context, DroidSaveService.class), this.mServiceConnect, ContextWrapper.BIND_AUTO_CREATE);
             }
         }
 
@@ -180,31 +180,42 @@ public final class SaveService {
          * @author Wythe
          */
         void destroy() {
-            if (this.mServiceConnection != null) {
+            if (this.mServiceConnect != null) {
                 final Context context = SproutLib.getContext();
                 if (AppUtils.isServiceRunning(DroidSaveService.class)) {
+                    final Intent intent = new Intent(context, DroidSaveService.class);
                     try {
-                        context.unbindService(this.mServiceConnection);
-                        return;
+                        context.stopService(intent);
                     } catch (Exception e) {
                         if (Lc.E) {
                             Lc.t(SproutLib.name).e(e);
                         }
                     } finally {
-                        this.mServiceConnection = null;
+                        try {
+                            context.unbindService(this.mServiceConnect);
+                        } catch (Exception e) {
+                            if (Lc.E) {
+                                Lc.t(SproutLib.name).e(e);
+                            }
+                        } finally {
+                            this.mCacheHandle = null;
+                            this.mServiceConnect = null;
+                        }
                     }
                 }
             }
             if (this.mCacheHandle != null) {
-                try {
-                    this.mCacheHandle.flush();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                try {
-                    this.mCacheHandle.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                if (this.mCacheHandle.alive()) {
+                    try {
+                        this.mCacheHandle.flush();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    try {
+                        this.mCacheHandle.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
                 }
                 this.mCacheHandle = null;
             }
