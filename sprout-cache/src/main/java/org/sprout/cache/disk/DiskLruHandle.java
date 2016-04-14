@@ -65,7 +65,16 @@ public final class DiskLruHandle<TYPE> implements CacheHandle<TYPE> {
 
     @Override
     public boolean alive() {
-        return this.mDiskLruCache != null && !this.mDiskLruCache.isClosed();
+        if (this.mDiskLruCache != null) {
+            try {
+                return !this.mDiskLruCache.isClosed();
+            } catch (Exception e) {
+                if (Lc.E) {
+                    Lc.t(SproutLib.name).e(e);
+                }
+            }
+        }
+        return false;
     }
 
     @Override

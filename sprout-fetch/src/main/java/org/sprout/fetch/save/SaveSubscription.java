@@ -3,8 +3,6 @@
  */
 package org.sprout.fetch.save;
 
-import org.sprout.fetch.spec.FetchPrior;
-
 import rx.Subscription;
 
 /**
@@ -15,44 +13,38 @@ import rx.Subscription;
  */
 final class SaveSubscription {
 
-    private Subscription subscription;
+    private final Subscription subscription;
 
-    private SaveScheduler saveScheduler;
+    private final SaveProperty saveProperty;
 
-    SaveSubscription(final Subscription subscription, final SaveScheduler saveScheduler) {
+    SaveSubscription(final Subscription subscription, final SaveProperty saveProperty) {
         this.subscription = subscription;
-        this.saveScheduler = saveScheduler;
+        this.saveProperty = saveProperty;
     }
 
-    boolean isUnsubscribed() {
-        return this.subscription == null || this.subscription.isUnsubscribed();
+    SaveProperty getSaveProperty() {
+        return this.saveProperty;
     }
 
     void unsubscribe() {
-        if (!this.isUnsubscribed()) {
-            this.subscription.unsubscribe();
-        }
-        this.subscription = null;
-        this.saveScheduler = null;
-    }
-
-    String getSaveId() {
-        return this.saveScheduler != null ? this.saveScheduler.saveId : null;
-    }
-
-    FetchPrior getSavePrior() {
-        if (this.saveScheduler != null) {
-            for (final FetchPrior prior : FetchPrior.values()) {
-                if (this.saveScheduler.savePrior == prior.getValue()) {
-                    return prior;
-                }
+        if (this.isSubscribed()) {
+            try {
+                this.subscription.unsubscribe();
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
-        return null;
     }
 
-    SaveScheduler getSaveScheduler() {
-        return this.saveScheduler;
+    boolean isSubscribed() {
+        if (this.subscription != null) {
+            try {
+                return !this.subscription.isUnsubscribed();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        return false;
     }
 
 }

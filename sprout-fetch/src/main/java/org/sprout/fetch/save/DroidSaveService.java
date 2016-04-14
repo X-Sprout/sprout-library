@@ -19,8 +19,10 @@ import org.sprout.fetch.spec.FetchStatus;
 
 import java.io.File;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 
 import rx.Observable;
@@ -134,39 +136,28 @@ public final class DroidSaveService extends Service {
 
     @Override
     public void onDestroy() {
+        // 销毁调度
         if (this.mSaveTimer != null) {
-            this.mSaveTimer.stop();
-        }
-        try {
-            this.mSchedulerList.clear();
-        } catch (Exception e) {
-            if (Lc.E) {
-                Lc.t(SproutLib.name).e("FetchService save free queue error.", e);
+            try {
+                this.mSaveTimer.stop();
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
-        try {
-            this.stopSaveSubscription();
-        } catch (Exception e) {
-            this.mSubscriptionMap.clear();
-            if (Lc.E) {
-                Lc.t(SproutLib.name).e("FetchService save free tasks error.", e);
-            }
-        }
+        // 销毁任务
+        this.stopSaveScheduler();
+        this.stopSaveSubscription();
         if (this.mSaveRecorder != null) {
             if (!this.mSaveRecorder.isShut()) {
                 try {
                     this.mSaveRecorder.mCacheHandle.flush();
                 } catch (Exception e) {
-                    if (Lc.E) {
-                        Lc.t(SproutLib.name).e("FetchService save free flash error.", e);
-                    }
+                    e.printStackTrace();
                 }
                 try {
                     this.mSaveRecorder.mCacheHandle.close();
                 } catch (Exception e) {
-                    if (Lc.E) {
-                        Lc.t(SproutLib.name).e("FetchService save free cache error.", e);
-                    }
+                    e.printStackTrace();
                 }
             }
             this.mSaveRecorder = null;
@@ -177,7 +168,7 @@ public final class DroidSaveService extends Service {
     }
 
     private void clearSave(final String saveId) {
-        this.removeSaveScheduler(saveId);
+        this.stopSaveScheduler(saveId);
         this.stopSaveSubscription(saveId);
         SaveObserver.mListenerHash.remove(saveId);
         SaveExecutor.destroyDownLoad(saveId, this.mSaveRecorder);
@@ -213,23 +204,15 @@ public final class DroidSaveService extends Service {
     private void pauseSave(final String saveId) {
         final SaveScheduler saveScheduler = this.searchSaveScheduler(saveId);
         if (saveScheduler != null) {
-            this.mSchedulerList.remove(saveScheduler);
+            this.stopSaveScheduler(saveScheduler, false);
         }
-        if (this.mSubscriptionMap.containsKey(saveId)) {
-            this.stopSaveSubscription(saveId);
-        } else {
-            if (saveScheduler != null) {
-                final SaveProperty property = this.mSaveRecorder.selectRecorder(saveId);
-                if (property != null) {
-                    final FetchStatus status = property.getSaveStatus();
-                    if (FetchStatus.START.equals(status) || FetchStatus.AWAIT.equals(status)) {
-                        SaveExecutor.reportPause(this.mSaveRecorder.updateSaveStatus(property, FetchStatus.PAUSE));
-                    }
-                    return;
-                }
-                if (Lc.D) {
-                    Lc.t(SproutLib.name).d("FetchService save pause: " + saveId);
-                }
+        final SaveSubscription saveSubscription = this.searchSaveSubscription(saveId);
+        if (saveSubscription != null) {
+            this.stopSaveSubscription(saveSubscription);
+        }
+        if (saveScheduler != null || saveSubscription != null) {
+            if (Lc.D) {
+                Lc.t(SproutLib.name).d("FetchService save pause: " + saveId);
             }
         }
     }
@@ -239,9 +222,8 @@ public final class DroidSaveService extends Service {
         SaveProperty property = this.mSaveRecorder.selectRecorder(saveScheduler.saveId);
         if (property == null) {
             // 异常任务
-            if (this.mSubscriptionMap.containsKey(saveScheduler.saveId)) {
-                this.stopSaveSubscription(saveScheduler.saveId);
-            }
+            this.stopSaveScheduler(saveScheduler.saveId);
+            this.stopSaveSubscription(saveScheduler.saveId);
         } else {
             if (!saveScheduler.savePath.equals(property.getSavePath())) {
                 // 任务冲突
@@ -256,14 +238,12 @@ public final class DroidSaveService extends Service {
             if (FetchStatus.FINISH.equals(property.getSaveStatus())) {
                 final File saveFile = new File(saveScheduler.savePath);
                 if (saveFile.exists()) {
-                    if (property.getFileSize() != property.getSaveSize() || property.getSaveSize() != saveFile.length()) {
-                        // 下载异常
-                        SaveExecutor.reportError(
-                                this.mSaveRecorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.SAVEFILE_DATA_ERR
-                        );
-                    } else {
+                    if (property.getSaveSize() == property.getFileSize() && property.getSaveSize() == saveFile.length()) {
                         // 下载完成
                         SaveExecutor.reportFinish(property);
+                    } else {
+                        // 下载异常
+                        SaveExecutor.reportError(this.mSaveRecorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.SAVEFILE_DATA_ERR);
                     }
                     return;
                 }
@@ -313,16 +293,24 @@ public final class DroidSaveService extends Service {
         // 判断线程
         takeScheduler = null;
         if (FetchService.getSaveThread() <= this.mSubscriptionMap.size()) {
-            SaveSubscription execSubscription = null;
-            for (final SaveSubscription value : this.mSubscriptionMap.values()) {
-                if (value != null && !FetchPrior.NOW.equals(value.getSavePrior())) {
-                    takeScheduler = (execSubscription = value).getSaveScheduler();
+            SaveSubscription haltSubscription = null;
+            for (final Iterator<SaveSubscription> it = this.mSubscriptionMap.values().iterator(); it.hasNext(); ) {
+                if ((haltSubscription = it.next()) != null) {
+                    final SaveProperty haltProperty = haltSubscription.getSaveProperty();
+                    if (haltProperty == null || FetchPrior.NOW.equals(haltProperty.getSavePrior())) {
+                        haltSubscription = null;
+                    } else {
+                        takeScheduler = new SaveScheduler(
+                                haltProperty.getTaskId(), haltProperty.getSaveUrl(), haltProperty.getSavePath(), haltProperty.getSaveRetry(), haltProperty.getSavePrior().getValue(), haltProperty.getSaveTimeout()
+                        );
+                        break;
+                    }
                 }
             }
             if (takeScheduler == null) {
                 takeScheduler = saveScheduler;
             } else {
-                this.stopSaveSubscription(execSubscription);
+                this.stopSaveSubscription(haltSubscription);
             }
             // 等待下载
             this.mSchedulerList.addLast(takeScheduler);
@@ -345,7 +333,7 @@ public final class DroidSaveService extends Service {
     }
 
     private SaveScheduler searchSaveScheduler(final String saveId) {
-        if (this.mSchedulerList.size() > 0) {
+        if (!StringUtils.isEmpty(saveId) && this.mSchedulerList.size() > 0) {
             for (final SaveScheduler saveScheduler : this.mSchedulerList) {
                 if (saveId.equals(saveScheduler.saveId)) {
                     return saveScheduler;
@@ -355,60 +343,113 @@ public final class DroidSaveService extends Service {
         return null;
     }
 
-    private void removeSaveScheduler(final String saveId) {
-        if (this.mSchedulerList.size() > 0) {
-            for (final SaveScheduler saveScheduler : this.mSchedulerList) {
-                if (saveId.equals(saveScheduler.saveId)) {
-                    this.mSchedulerList.remove(saveScheduler);
-                    break;
+    private void stopSaveScheduler() {
+        while (this.mSchedulerList.size() > 0) {
+            this.stopSaveScheduler(this.mSchedulerList.removeLast(), true);
+        }
+    }
+
+    private void stopSaveScheduler(final String saveId) {
+        this.stopSaveScheduler(this.searchSaveScheduler(saveId), false);
+    }
+
+    private void stopSaveScheduler(final SaveScheduler saveScheduler, final boolean saveDestroyed) {
+        if (saveScheduler != null) {
+            if (!saveDestroyed) {
+                this.mSchedulerList.remove(saveScheduler);
+            }
+            if (this.mSaveRecorder != null) {
+                final SaveProperty saveProperty = this.mSaveRecorder.updateSaveStatus(saveScheduler.saveId, FetchStatus.PAUSE);
+                if (saveProperty != null) {
+                    SaveExecutor.reportPause(saveProperty);
                 }
             }
         }
     }
 
+    private SaveSubscription searchSaveSubscription(final String saveId) {
+        return !StringUtils.isEmpty(saveId) && this.mSubscriptionMap.size() > 0 ? this.mSubscriptionMap.get(saveId) : null;
+    }
+
     private void stopSaveSubscription() {
         if (this.mSubscriptionMap.size() > 0) {
-            for (final SaveSubscription saveSubscription : this.mSubscriptionMap.values()) {
-                this.stopSaveSubscription(saveSubscription);
+            final Queue<SaveSubscription> queue = new LinkedList<>();
+            for (final Iterator<SaveSubscription> it = this.mSubscriptionMap.values().iterator(); it.hasNext(); ) {
+                final SaveSubscription saveSubscription = it.next();
+                if (saveSubscription != null) {
+                    queue.offer(saveSubscription);
+                }
+            }
+            while (queue.size() > 0) {
+                this.stopSaveSubscription(queue.poll());
             }
         }
     }
 
     private void stopSaveSubscription(final String saveId) {
-        if (this.mSubscriptionMap.containsKey(saveId)) {
-            this.stopSaveSubscription(this.mSubscriptionMap.get(saveId));
-        }
+        this.stopSaveSubscription(this.searchSaveSubscription(saveId));
     }
 
     private void stopSaveSubscription(final SaveSubscription saveSubscription) {
         if (saveSubscription != null) {
-            if (!saveSubscription.isUnsubscribed()) {
+            final SaveProperty saveProperty = saveSubscription.getSaveProperty();
+            if (this.mSaveRecorder != null) {
+                this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE);
+            }
+            if (saveSubscription.isSubscribed()) {
                 saveSubscription.unsubscribe();
             } else {
-                this.mSubscriptionMap.remove(saveSubscription.getSaveId());
+                if (saveProperty != null) {
+                    this.mSubscriptionMap.remove(saveProperty.getTaskId());
+                }
             }
         }
     }
 
     private void registSaveSubscription(final SaveRecorder saveRecorder, final SaveScheduler saveScheduler) {
         final SaveSubscription saveSubscription = this.mSubscriptionMap.get(saveScheduler.saveId);
-        if (saveSubscription == null || saveSubscription.isUnsubscribed()) {
-            final Observable<SaveProperty> observable = SaveExecutor.observableDownLoad(saveRecorder, saveScheduler, new Action0() {
-                @Override
-                public void call() {
-                    mSubscriptionMap.remove(saveScheduler.saveId);
-                    if (Lc.D) {
-                        Lc.t(SproutLib.name).d("FetchService save close: " + saveScheduler.saveId);
+        if ((saveSubscription == null || !saveSubscription.isSubscribed())) {
+            if (this.mSaveRecorder != null) {
+                SaveProperty saveProperty = this.mSaveRecorder.selectRecorder(saveScheduler.saveId);
+                if (saveProperty != null) {
+                    if (!(new File(saveScheduler.savePath)).exists() && !(new File(SaveExecutor.getTempFilePath(saveScheduler.savePath))).exists()) {
+                        this.mSaveRecorder.revertScheduler(saveProperty, saveScheduler);
+                    } else {
+                        this.mSaveRecorder.updateScheduler(saveProperty, saveScheduler);
                     }
+                } else {
+                    final File tempFile = new File(SaveExecutor.getTempFilePath(saveScheduler.savePath));
+                    if (tempFile.exists()) {
+                        tempFile.delete();
+                    }
+                    final File saveFile = new File(saveScheduler.savePath);
+                    if (saveFile.exists()) {
+                        saveFile.delete();
+                    }
+                    saveProperty = this.mSaveRecorder.insertScheduler(saveScheduler);
                 }
-            });
-            if (observable == null) {
-                this.mSubscriptionMap.remove(saveScheduler.saveId);
-            } else {
-                this.mSubscriptionMap.put(saveScheduler.saveId, new SaveSubscription(
-                        observable.subscribe(new SaveSubscriber(saveScheduler.saveId)), saveScheduler
-                ));
+                if (saveProperty != null) {
+                    final Observable<SaveProperty> observable = SaveExecutor.observableDownLoad(saveRecorder, saveProperty, new Action0() {
+                        @Override
+                        public void call() {
+                            mSubscriptionMap.remove(saveScheduler.saveId);
+                            if (Lc.D) {
+                                Lc.t(SproutLib.name).d("FetchService save close: " + saveScheduler.saveId);
+                            }
+                        }
+                    });
+                    if (observable == null) {
+                        this.mSubscriptionMap.remove(saveScheduler.saveId);
+                    } else {
+                        this.mSubscriptionMap.put(saveScheduler.saveId, new SaveSubscription(
+                                observable.subscribe(new SaveSubscriber(saveScheduler.saveId)), saveProperty
+                        ));
+                    }
+                    return;
+                }
             }
+            // 记录异常
+            SaveExecutor.reportError(saveScheduler.saveId, FetchError.RECORD_ERR);
         }
     }
 

@@ -56,7 +56,14 @@ public final class SaveRecorder {
      * @author Wythe
      */
     boolean isShut() {
-        return this.mCacheHandle == null || !this.mCacheHandle.alive();
+        if (this.mCacheHandle != null) {
+            try {
+                return !this.mCacheHandle.alive();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        return true;
     }
 
     /**
@@ -80,7 +87,7 @@ public final class SaveRecorder {
      */
     @SuppressWarnings("unchecked")
     SaveProperty selectRecorder(final String saveId) {
-        if (this.isShut() || StringUtils.isEmpty(saveId)) {
+        if (StringUtils.isEmpty(saveId) || this.isShut()) {
             return null;
         }
         return decapsulate(this.mCacheHandle.get(saveId));
@@ -95,8 +102,10 @@ public final class SaveRecorder {
      */
     SaveProperty insertScheduler(final SaveScheduler saveScheduler) {
         if (saveScheduler != null && !StringUtils.isEmpty(saveScheduler.saveId) && !StringUtils.isEmpty(saveScheduler.saveUrl) && !StringUtils.isEmpty(saveScheduler.savePath)) {
-            if (!this.isShut()) {
-                final SaveProperty saveProperty = new SaveProperty(saveScheduler.saveId);
+            final SaveProperty saveProperty = new SaveProperty(saveScheduler.saveId);
+            if (this.isShut()) {
+                return null;
+            } else {
                 saveProperty.setSaveTime(System.currentTimeMillis());
                 saveProperty.setSaveStatus(FetchStatus.AWAIT);
                 saveProperty.setSaveUrl(saveScheduler.saveUrl);
@@ -105,8 +114,8 @@ public final class SaveRecorder {
                 saveProperty.setSavePrior(saveScheduler.savePrior);
                 saveProperty.setSaveTimeout(saveScheduler.saveTimeout);
                 this.mCacheHandle.put(saveScheduler.saveId, encapsulate(saveProperty));
-                return saveProperty;
             }
+            return saveProperty;
         }
         return null;
     }
@@ -114,28 +123,31 @@ public final class SaveRecorder {
     /**
      * 还原任务记录
      *
-     * @param saveProperty 下载属性
+     * @param saveProperty  下载属性
+     * @param saveScheduler 任务计划
      * @return 下载属性
      * @author Wythe
      */
     SaveProperty revertScheduler(final SaveProperty saveProperty, final SaveScheduler saveScheduler) {
-        if (saveProperty != null) {
+        if (saveProperty != null && !this.isShut()) {
             boolean amendRecord = false;
-            if (!StringUtils.isEmpty(saveScheduler.saveUrl) && !saveScheduler.saveUrl.equals(saveProperty.getSaveUrl())) {
-                saveProperty.setSaveUrl(saveScheduler.saveUrl);
-                amendRecord = true;
-            }
-            if (saveScheduler.savePrior >= 0 && saveScheduler.savePrior != saveProperty.getSavePrior().getValue()) {
-                saveProperty.setSavePrior(saveScheduler.savePrior);
-                amendRecord = true;
-            }
-            if (saveScheduler.saveTimeout >= 0 && saveScheduler.saveTimeout != saveProperty.getSaveTimeout()) {
-                saveProperty.setSaveTimeout(saveScheduler.saveTimeout);
-                amendRecord = true;
-            }
-            if (saveScheduler.saveRetry >= 0 && saveScheduler.saveRetry != saveProperty.getSaveRetry()) {
-                saveProperty.setSaveRetry(saveScheduler.saveRetry);
-                amendRecord = true;
+            if (saveScheduler != null) {
+                if (!StringUtils.isEmpty(saveScheduler.saveUrl) && !saveScheduler.saveUrl.equals(saveProperty.getSaveUrl())) {
+                    saveProperty.setSaveUrl(saveScheduler.saveUrl);
+                    amendRecord = true;
+                }
+                if (saveScheduler.savePrior >= 0 && saveScheduler.savePrior != saveProperty.getSavePrior().getValue()) {
+                    saveProperty.setSavePrior(saveScheduler.savePrior);
+                    amendRecord = true;
+                }
+                if (saveScheduler.saveTimeout >= 0 && saveScheduler.saveTimeout != saveProperty.getSaveTimeout()) {
+                    saveProperty.setSaveTimeout(saveScheduler.saveTimeout);
+                    amendRecord = true;
+                }
+                if (saveScheduler.saveRetry >= 0 && saveScheduler.saveRetry != saveProperty.getSaveRetry()) {
+                    saveProperty.setSaveRetry(saveScheduler.saveRetry);
+                    amendRecord = true;
+                }
             }
             if (!FetchStatus.AWAIT.equals(saveProperty.getSaveStatus())) {
                 saveProperty.setSaveStatus(FetchStatus.AWAIT);
@@ -166,39 +178,39 @@ public final class SaveRecorder {
      */
     @SuppressWarnings("unchecked")
     SaveProperty updateScheduler(final SaveProperty saveProperty, final SaveScheduler saveScheduler) {
-        if (saveScheduler != null && !StringUtils.isEmpty(saveScheduler.saveId)) {
-            if (saveProperty == null) {
-                return this.insertScheduler(saveScheduler);
-            }
+        if (saveProperty == null) {
+            return this.insertScheduler(saveScheduler);
+        } else {
             if (!this.isShut()) {
                 boolean amendRecord = false;
-                if (!StringUtils.isEmpty(saveScheduler.saveUrl) && !saveScheduler.saveUrl.equals(saveProperty.getSaveUrl())) {
-                    saveProperty.setSaveUrl(saveScheduler.saveUrl);
-                    amendRecord = true;
-                }
-                if (saveScheduler.savePrior >= 0 && saveScheduler.savePrior != saveProperty.getSavePrior().getValue()) {
-                    saveProperty.setSavePrior(saveScheduler.savePrior);
-                    amendRecord = true;
-                }
-                if (saveScheduler.saveTimeout >= 0 && saveScheduler.saveTimeout != saveProperty.getSaveTimeout()) {
-                    saveProperty.setSaveTimeout(saveScheduler.saveTimeout);
-                    amendRecord = true;
-                }
-                if (saveScheduler.saveRetry >= 0 && saveScheduler.saveRetry != saveProperty.getSaveRetry()) {
-                    saveProperty.setSaveRetry(saveScheduler.saveRetry);
-                    amendRecord = true;
+                if (saveScheduler != null) {
+                    if (!StringUtils.isEmpty(saveScheduler.saveUrl) && !saveScheduler.saveUrl.equals(saveProperty.getSaveUrl())) {
+                        saveProperty.setSaveUrl(saveScheduler.saveUrl);
+                        amendRecord = true;
+                    }
+                    if (saveScheduler.savePrior >= 0 && saveScheduler.savePrior != saveProperty.getSavePrior().getValue()) {
+                        saveProperty.setSavePrior(saveScheduler.savePrior);
+                        amendRecord = true;
+                    }
+                    if (saveScheduler.saveTimeout >= 0 && saveScheduler.saveTimeout != saveProperty.getSaveTimeout()) {
+                        saveProperty.setSaveTimeout(saveScheduler.saveTimeout);
+                        amendRecord = true;
+                    }
+                    if (saveScheduler.saveRetry >= 0 && saveScheduler.saveRetry != saveProperty.getSaveRetry()) {
+                        saveProperty.setSaveRetry(saveScheduler.saveRetry);
+                        amendRecord = true;
+                    }
                 }
                 if (!FetchStatus.AWAIT.equals(saveProperty.getSaveStatus())) {
                     saveProperty.setSaveStatus(FetchStatus.AWAIT);
                     amendRecord = true;
                 }
                 if (amendRecord) {
-                    this.mCacheHandle.put(saveScheduler.saveId, encapsulate(saveProperty));
+                    this.mCacheHandle.put(saveProperty.getTaskId(), encapsulate(saveProperty));
                 }
             }
-            return saveProperty;
         }
-        return null;
+        return saveProperty;
     }
 
     /**
