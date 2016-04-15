@@ -145,10 +145,13 @@ public final class DroidSaveService extends Service {
             }
         }
         // 销毁任务
-        this.stopSaveScheduler();
-        this.stopSaveSubscription();
         if (this.mSaveRecorder != null) {
-            if (!this.mSaveRecorder.isShut()) {
+            if (this.mSaveRecorder.isShut()) {
+                this.mSchedulerList.clear();
+                this.mSubscriptionMap.clear();
+            } else {
+                this.stopSaveScheduler();
+                this.stopSaveSubscription();
                 try {
                     this.mSaveRecorder.mCacheHandle.flush();
                 } catch (Exception e) {
