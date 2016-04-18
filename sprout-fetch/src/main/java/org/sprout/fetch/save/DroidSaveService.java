@@ -91,21 +91,21 @@ public final class DroidSaveService extends Service {
                             switch (command) {
                                 // 监听下载
                                 case COMMAND_WATCH: {
-                                    synchronized (DroidSaveService.this) {
+                                    synchronized (this.mSchedulerList) {
                                         this.watchSave(saveId);
                                     }
                                     break;
                                 }
                                 // 暂停下载
                                 case COMMAND_PAUSE: {
-                                    synchronized (DroidSaveService.this) {
+                                    synchronized (this.mSchedulerList) {
                                         this.pauseSave(saveId);
                                     }
                                     break;
                                 }
                                 // 取消下载
                                 case COMMAND_CANCEL: {
-                                    synchronized (DroidSaveService.this) {
+                                    synchronized (this.mSchedulerList) {
                                         this.clearSave(saveId);
                                     }
                                     break;
@@ -117,7 +117,7 @@ public final class DroidSaveService extends Service {
                             final String savePath = intent.getStringExtra(INTENT_SAVE_PATH_KEY);
                             if (!StringUtils.isEmpty(fileUrl) && !StringUtils.isEmpty(savePath)) {
                                 final SaveScheduler saveScheduler = new SaveScheduler(saveId, fileUrl, savePath, intent.getIntExtra(INTENT_SAVE_RETRY_KEY, 0), intent.getIntExtra(INTENT_SAVE_PRIOR_KEY, 0), intent.getIntExtra(INTENT_SAVE_TIMEOUT_KEY, 0));
-                                synchronized (DroidSaveService.this) {
+                                synchronized (this.mSchedulerList) {
                                     this.startSave(saveScheduler);
                                 }
                             }
@@ -362,9 +362,15 @@ public final class DroidSaveService extends Service {
                 this.mSchedulerList.remove(saveScheduler);
             }
             if (this.mSaveRecorder != null) {
-                final SaveProperty saveProperty = this.mSaveRecorder.updateSaveStatus(saveScheduler.saveId, FetchStatus.PAUSE);
+                final SaveProperty saveProperty = this.mSaveRecorder.selectRecorder(saveScheduler.saveId);
                 if (saveProperty != null) {
-                    SaveExecutor.reportPause(saveProperty);
+                    switch (saveProperty.getSaveStatus()) {
+                        case AWAIT:
+                        case START: {
+                            SaveExecutor.reportPause(this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE));
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -396,14 +402,23 @@ public final class DroidSaveService extends Service {
     private void stopSaveSubscription(final SaveSubscription saveSubscription) {
         if (saveSubscription != null) {
             final SaveProperty saveProperty = saveSubscription.getSaveProperty();
-            if (this.mSaveRecorder != null) {
-                this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE);
-            }
             if (saveSubscription.isSubscribed()) {
+                if (this.mSaveRecorder != null) {
+                    this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE);
+                }
                 saveSubscription.unsubscribe();
             } else {
                 if (saveProperty != null) {
                     this.mSubscriptionMap.remove(saveProperty.getTaskId());
+                    if (this.mSaveRecorder != null) {
+                        switch (saveProperty.getSaveStatus()) {
+                            case AWAIT:
+                            case START: {
+                                SaveExecutor.reportPause(this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE));
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -461,7 +476,7 @@ public final class DroidSaveService extends Service {
         public void onTime() {
             if (mSaveRecorder != null && !mSaveRecorder.isShut()) {
                 if (FetchService.getSaveThread() > mSubscriptionMap.size()) {
-                    synchronized (DroidSaveService.this) {
+                    synchronized (mSchedulerList) {
                         if (mSchedulerList.size() > 0) {
                             final SaveScheduler saveScheduler = mSchedulerList.removeLast();
                             if (saveScheduler != null) {

@@ -28,9 +28,11 @@ public enum FetchError {
     TEMPFILE_CHAN_ERR(13, "FetchService open the temp file io error."),
     SAVEFILE_DATA_ERR(14, "FetchService saved the real file data error."),
     TEMPFILE_DATA_ERR(15, "FetchService saved the temp file data error."),
-    TEMPFILE_CONVERT_ERR(16, "FetchService convert the temp file to real file error."),
-    FILESIZE_CONFLICT_ERR(17, "FetchService the response data size of the request conflict."),
-    SAVETASK_CONFLICT_ERR(18, "FetchService perform the save task conflict.");
+    TEMPFILE_FREE_ERR(16, "FetchService saved the temp file free error."),
+    TEMPFILE_SEEK_ERR(17, "FetchService saved the temp file seek error."),
+    TEMPFILE_CONVERT_ERR(18, "FetchService convert the temp file to real file error."),
+    FILESIZE_CONFLICT_ERR(19, "FetchService the response data size of the request conflict."),
+    SAVETASK_CONFLICT_ERR(20, "FetchService perform the save task conflict.");
 
     private final int code;
 
