@@ -20,11 +20,11 @@ public final class FetchOptions {
     private final static String FETCH_RECORD = "record-fetch";
 
     // 请求线程大小
-    int takeThread = 5;
+    int takeThread = 3;
     // 下载线程大小
-    int saveThread = 5;
+    int saveThread = 3;
     // 上传线程大小
-    int giveThread = 5;
+    int giveThread = 3;
     // 请求队列大小
     private int takeQueue = 300;
     // 下载队列大小
