@@ -266,7 +266,12 @@ final class SaveExecutor {
         return recorder == null || property == null || unscheduler == null ? null : Observable.create(new Observable.OnSubscribe<SaveProperty>() {
             @Override
             public void call(final Subscriber<? super SaveProperty> subscriber) {
-                SaveExecutor.downloadFile(recorder, property, (Subscriber<SaveProperty>) subscriber);
+                if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                    SaveExecutor.reportPause(property);
+                    subscriber.onCompleted();
+                } else {
+                    SaveExecutor.downloadFile(recorder, property, (Subscriber<SaveProperty>) subscriber);
+                }
             }
         }).doOnTerminate(unscheduler).doOnUnsubscribe(unscheduler).subscribeOn(Schedulers.io()).onBackpressureLatest().observeOn(AndroidSchedulers.mainThread()).doOnError(new Action1<Throwable>() {
             @Override
