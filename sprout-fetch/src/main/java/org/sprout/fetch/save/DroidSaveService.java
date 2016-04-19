@@ -426,14 +426,25 @@ public final class DroidSaveService extends Service {
 
     private void registSaveSubscription(final SaveRecorder saveRecorder, final SaveScheduler saveScheduler) {
         final SaveSubscription saveSubscription = this.mSubscriptionMap.get(saveScheduler.saveId);
-        if ((saveSubscription == null || !saveSubscription.isSubscribed())) {
+        if (saveSubscription == null || !saveSubscription.isSubscribed()) {
             if (this.mSaveRecorder != null) {
                 SaveProperty saveProperty = this.mSaveRecorder.selectRecorder(saveScheduler.saveId);
                 if (saveProperty != null) {
-                    if (!(new File(saveScheduler.savePath)).exists() && !(new File(SaveExecutor.getTempFilePath(saveScheduler.savePath))).exists()) {
-                        this.mSaveRecorder.revertScheduler(saveProperty, saveScheduler);
+                    if (FetchStatus.PAUSE.equals(saveProperty.getSaveStatus())) {
+                        if (saveSubscription != null) {
+                            this.mSubscriptionMap.remove(saveScheduler.saveId);
+                        }
+                        SaveExecutor.reportPause(saveProperty);
+                        return;
                     } else {
-                        this.mSaveRecorder.updateScheduler(saveProperty, saveScheduler);
+                        final File saveFile = new File(saveScheduler.savePath), tempFile = new File(
+                                SaveExecutor.getTempFilePath(saveScheduler.savePath)
+                        );
+                        if (!saveFile.exists() && !tempFile.exists()) {
+                            this.mSaveRecorder.revertScheduler(saveProperty, saveScheduler);
+                        } else {
+                            this.mSaveRecorder.updateScheduler(saveProperty, saveScheduler);
+                        }
                     }
                 } else {
                     final File tempFile = new File(SaveExecutor.getTempFilePath(saveScheduler.savePath));
@@ -457,7 +468,9 @@ public final class DroidSaveService extends Service {
                         }
                     });
                     if (observable == null) {
-                        this.mSubscriptionMap.remove(saveScheduler.saveId);
+                        if (saveSubscription != null) {
+                            this.mSubscriptionMap.remove(saveScheduler.saveId);
+                        }
                     } else {
                         this.mSubscriptionMap.put(saveScheduler.saveId, new SaveSubscription(
                                 observable.subscribe(new SaveSubscriber(saveScheduler.saveId)), saveProperty

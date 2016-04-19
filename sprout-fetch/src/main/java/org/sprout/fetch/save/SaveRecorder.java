@@ -153,11 +153,11 @@ public final class SaveRecorder {
                 saveProperty.setSaveStatus(FetchStatus.AWAIT);
                 amendRecord = true;
             }
-            if (saveProperty.getFileSize() != 0) {
+            if (saveProperty.getFileSize() > 0) {
                 saveProperty.setFileSize(0);
                 amendRecord = true;
             }
-            if (saveProperty.getSaveSize() != 0) {
+            if (saveProperty.getSaveSize() > 0) {
                 saveProperty.setSaveSize(0);
                 amendRecord = true;
             }

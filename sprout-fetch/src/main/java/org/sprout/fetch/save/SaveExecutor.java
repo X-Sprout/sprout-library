@@ -270,7 +270,18 @@ final class SaveExecutor {
                     SaveExecutor.reportPause(property);
                     subscriber.onCompleted();
                 } else {
-                    SaveExecutor.downloadFile(recorder, property, (Subscriber<SaveProperty>) subscriber);
+                    try {
+                        SaveExecutor.downloadFile(recorder, property, (Subscriber<SaveProperty>) subscriber);
+                    } catch (Exception e) {
+                        if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                            SaveExecutor.reportPause(property);
+                            subscriber.onCompleted();
+                        } else {
+                            subscriber.onError(new SaveException(
+                                    recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.UNKNOWN_ERR.getCode(), FetchError.UNKNOWN_ERR.getMessage(), e
+                            ));
+                        }
+                    }
                 }
             }
         }).doOnTerminate(unscheduler).doOnUnsubscribe(unscheduler).subscribeOn(Schedulers.io()).onBackpressureLatest().observeOn(AndroidSchedulers.mainThread()).doOnError(new Action1<Throwable>() {
@@ -336,13 +347,7 @@ final class SaveExecutor {
     }
 
     private static void downloadFile(final SaveRecorder recorder, final SaveProperty property, final Subscriber<SaveProperty> subscriber) {
-        final File saveFile = new File(property.getSavePath()), tempFile = new File(getTempFilePath(property.getSavePath()));
-        if (property.getSaveSize() > property.getFileSize()) {
-            // 已下载文件大小是否异常
-            SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.SAVESIZE_MORE_ERR);
-            subscriber.onCompleted();
-            return;
-        }
+        final File saveFile = new File(property.getSavePath());
         if (saveFile.exists()) {
             if (property.getFileSize() > 0 && property.getFileSize() == property.getSaveSize() && property.getFileSize() == saveFile.length()) {
                 SaveExecutor.reportFinish(recorder.updateSaveStatus(property, FetchStatus.FINISH));
@@ -354,24 +359,30 @@ final class SaveExecutor {
             }
             return;
         }
+        final File tempFile = new File(SaveExecutor.getTempFilePath(property.getSavePath()));
         if (tempFile.exists()) {
             if (property.getFileSize() > 0) {
                 final long tempSize = tempFile.length();
-                if (property.getSaveSize() == tempSize) {
-                    if (property.getSaveSize() == property.getFileSize()) {
-                        // 临时文件已成功下载
-                        if (tempFile.renameTo(saveFile)) {
-                            SaveExecutor.reportFinish(recorder.updateSaveStatus(property, FetchStatus.FINISH));
-                            subscriber.onCompleted();
-                        } else {
-                            SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.TEMPFILE_CONVERT_ERR);
-                            subscriber.onCompleted();
-                        }
-                        return;
-                    }
-                } else {
-                    // 同步缓存大小
+                // 同步缓存大小
+                if (property.getSaveSize() != tempSize) {
                     recorder.updateSaveSize(property, tempSize);
+                }
+                if (property.getSaveSize() > property.getFileSize()) {
+                    // 临时文件大小异常
+                    SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.SAVESIZE_MORE_ERR);
+                    subscriber.onCompleted();
+                    return;
+                }
+                if (property.getSaveSize() == property.getFileSize()) {
+                    // 临时文件已成功下载
+                    if (tempFile.renameTo(saveFile)) {
+                        SaveExecutor.reportFinish(recorder.updateSaveStatus(property, FetchStatus.FINISH));
+                        subscriber.onCompleted();
+                    } else {
+                        SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.TEMPFILE_CONVERT_ERR);
+                        subscriber.onCompleted();
+                    }
+                    return;
                 }
             } else {
                 if (property.getSaveSize() > 0) {
@@ -383,9 +394,15 @@ final class SaveExecutor {
                 }
             }
         } else {
-            // 更新缓存大小
-            if (property.getSaveSize() > 0) {
-                recorder.updateSaveSize(property, 0L);
+            if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                SaveExecutor.reportPause(property);
+                subscriber.onCompleted();
+                return;
+            } else {
+                // 更新缓存大小
+                if (property.getSaveSize() > 0) {
+                    recorder.updateSaveSize(property, 0L);
+                }
             }
         }
         // 正式下载
@@ -497,7 +514,6 @@ final class SaveExecutor {
             return;
         }
         // 判断任务状态
-        Throwable fault = null;
         if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
             SaveExecutor.reportPause(property);
             subscriber.onCompleted();
@@ -507,11 +523,21 @@ final class SaveExecutor {
             if (property.getFileSize() < 1) {
                 recorder.updateFileSize(property, fileSize);
             }
-            // 更新下载状态
-            SaveExecutor.reportStart(recorder.updateSaveStatus(property, FetchStatus.START));
+            if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                SaveExecutor.reportPause(property);
+                subscriber.onCompleted();
+                return;
+            } else {
+                // 更新下载状态
+                SaveExecutor.reportStart(recorder.updateSaveStatus(property, FetchStatus.START));
+            }
         }
+        // 设置下载缓存
+        final BufferedInputStream bis = new BufferedInputStream(
+                httpResponse.body().byteStream(), SIZE_BUFFER
+        );
         // 写入下载文件
-        final BufferedInputStream bis = new BufferedInputStream(httpResponse.body().byteStream(), SIZE_BUFFER);
+        boolean success = true;
         try {
             int count, begin;
             final byte[] cache = new byte[SIZE_BUFFER];
@@ -533,7 +559,7 @@ final class SaveExecutor {
                 subscriber.onNext(recorder.updateSaveSize(property, fstmp));
             }
         } catch (Exception e) {
-            fault = e;
+            success = false;
             if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
                 SaveExecutor.reportPause(property);
                 subscriber.onCompleted();
@@ -548,22 +574,22 @@ final class SaveExecutor {
                 bis.close();
             } catch (Exception e) {
                 e.printStackTrace();
-            } finally {
-                try {
-                    outer.close();
-                } catch (Exception e) {
-                    if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                        if (fault == null) {
-                            SaveExecutor.reportPause(property);
-                        }
-                        subscriber.onCompleted();
-                    } else {
-                        subscriber.onError(new SaveException(
-                                recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.TEMPFILE_FREE_ERR.getCode(), FetchError.TEMPFILE_FREE_ERR.getMessage(), e
-                        ));
+            }
+            // 释放文件
+            try {
+                outer.close();
+            } catch (Exception e) {
+                if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                    if (success) {
+                        SaveExecutor.reportPause(property);
                     }
-                    return;
+                    subscriber.onCompleted();
+                } else {
+                    subscriber.onError(new SaveException(
+                            recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.TEMPFILE_FREE_ERR.getCode(), FetchError.TEMPFILE_FREE_ERR.getMessage(), e
+                    ));
                 }
+                return;
             }
         }
         // 校验下载状态

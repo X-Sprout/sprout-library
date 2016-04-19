@@ -33,6 +33,8 @@ public class SaveProperty extends FetchProperty {
 
     public SaveProperty(final String saveId) {
         super(saveId);
+        // 默认文件大小
+        this.fileSize = -1L;
     }
 
     public int getSaveTimeout() {
