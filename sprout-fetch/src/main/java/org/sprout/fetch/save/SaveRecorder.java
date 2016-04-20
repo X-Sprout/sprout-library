@@ -8,6 +8,7 @@ import org.sprout.cache.base.CacheHandle;
 import org.sprout.cache.conf.StoreConfig;
 import org.sprout.core.assist.StringUtils;
 import org.sprout.fetch.FetchService;
+import org.sprout.fetch.spec.FetchError;
 import org.sprout.fetch.spec.FetchStatus;
 
 import java.io.IOException;
@@ -128,8 +129,12 @@ public final class SaveRecorder {
      * @return 下载属性
      * @author Wythe
      */
-    SaveProperty revertScheduler(final SaveProperty saveProperty, final SaveScheduler saveScheduler) {
-        if (saveProperty != null && !this.isShut()) {
+    SaveProperty revertScheduler(final SaveProperty saveProperty, final SaveScheduler saveScheduler) throws SaveException {
+        if (saveProperty != null) {
+            if (this.isShut()) {
+                throw new SaveException(saveProperty.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage());
+            }
+            // 还原记录
             boolean amendRecord = false;
             if (saveScheduler != null) {
                 if (!StringUtils.isEmpty(saveScheduler.saveUrl) && !saveScheduler.saveUrl.equals(saveProperty.getSaveUrl())) {
@@ -177,88 +182,42 @@ public final class SaveRecorder {
      * @author Cuzki
      */
     @SuppressWarnings("unchecked")
-    SaveProperty updateScheduler(final SaveProperty saveProperty, final SaveScheduler saveScheduler) {
+    SaveProperty updateScheduler(final SaveProperty saveProperty, final SaveScheduler saveScheduler) throws SaveException {
         if (saveProperty == null) {
             return this.insertScheduler(saveScheduler);
         } else {
-            if (!this.isShut()) {
-                boolean amendRecord = false;
-                if (saveScheduler != null) {
-                    if (!StringUtils.isEmpty(saveScheduler.saveUrl) && !saveScheduler.saveUrl.equals(saveProperty.getSaveUrl())) {
-                        saveProperty.setSaveUrl(saveScheduler.saveUrl);
-                        amendRecord = true;
-                    }
-                    if (saveScheduler.savePrior >= 0 && saveScheduler.savePrior != saveProperty.getSavePrior().getValue()) {
-                        saveProperty.setSavePrior(saveScheduler.savePrior);
-                        amendRecord = true;
-                    }
-                    if (saveScheduler.saveTimeout >= 0 && saveScheduler.saveTimeout != saveProperty.getSaveTimeout()) {
-                        saveProperty.setSaveTimeout(saveScheduler.saveTimeout);
-                        amendRecord = true;
-                    }
-                    if (saveScheduler.saveRetry >= 0 && saveScheduler.saveRetry != saveProperty.getSaveRetry()) {
-                        saveProperty.setSaveRetry(saveScheduler.saveRetry);
-                        amendRecord = true;
-                    }
-                }
-                if (!FetchStatus.AWAIT.equals(saveProperty.getSaveStatus())) {
-                    saveProperty.setSaveStatus(FetchStatus.AWAIT);
+            if (this.isShut()) {
+                throw new SaveException(saveProperty.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage());
+            }
+            // 更新记录
+            boolean amendRecord = false;
+            if (saveScheduler != null) {
+                if (!StringUtils.isEmpty(saveScheduler.saveUrl) && !saveScheduler.saveUrl.equals(saveProperty.getSaveUrl())) {
+                    saveProperty.setSaveUrl(saveScheduler.saveUrl);
                     amendRecord = true;
                 }
-                if (amendRecord) {
-                    this.mCacheHandle.put(saveProperty.getTaskId(), encapsulate(saveProperty));
+                if (saveScheduler.savePrior >= 0 && saveScheduler.savePrior != saveProperty.getSavePrior().getValue()) {
+                    saveProperty.setSavePrior(saveScheduler.savePrior);
+                    amendRecord = true;
+                }
+                if (saveScheduler.saveTimeout >= 0 && saveScheduler.saveTimeout != saveProperty.getSaveTimeout()) {
+                    saveProperty.setSaveTimeout(saveScheduler.saveTimeout);
+                    amendRecord = true;
+                }
+                if (saveScheduler.saveRetry >= 0 && saveScheduler.saveRetry != saveProperty.getSaveRetry()) {
+                    saveProperty.setSaveRetry(saveScheduler.saveRetry);
+                    amendRecord = true;
                 }
             }
-        }
-        return saveProperty;
-    }
-
-    /**
-     * 更新下载进度
-     *
-     * @param saveId   下载标识
-     * @param downSize 新增大小
-     * @return 下载属性
-     * @author Cuzki
-     */
-    @SuppressWarnings("unchecked")
-    SaveProperty updateProgress(final String saveId, final int downSize) {
-        return StringUtils.isEmpty(saveId) || this.isShut() ? null : (
-                this.updateProgress(decapsulate(this.mCacheHandle.get(saveId)), downSize)
-        );
-    }
-
-    /**
-     * 更新下载进度
-     *
-     * @param saveProperty 下载属性
-     * @param downSize     新增大小
-     * @return 下载属性
-     * @author Wythe
-     */
-    SaveProperty updateProgress(final SaveProperty saveProperty, final int downSize) {
-        if (saveProperty != null && downSize > 0) {
-            saveProperty.addSaveSize(downSize);
-            if (!StringUtils.isEmpty(saveProperty.getTaskId()) && !this.isShut()) {
+            if (!FetchStatus.AWAIT.equals(saveProperty.getSaveStatus())) {
+                saveProperty.setSaveStatus(FetchStatus.AWAIT);
+                amendRecord = true;
+            }
+            if (amendRecord) {
                 this.mCacheHandle.put(saveProperty.getTaskId(), encapsulate(saveProperty));
             }
         }
         return saveProperty;
-    }
-
-    /**
-     * 更新文件大小
-     *
-     * @param saveId   下载标识
-     * @param saveSize 下载大小
-     * @return 下载属性
-     * @author Cuzki
-     */
-    @SuppressWarnings("unchecked")
-    SaveProperty updateSaveSize(final String saveId, final long saveSize) {
-        return StringUtils.isEmpty(saveId) || this.isShut() ? null : (
-                this.updateSaveSize(decapsulate(this.mCacheHandle.get(saveId)), saveSize)
-        );
     }
 
     /**
@@ -269,29 +228,15 @@ public final class SaveRecorder {
      * @return 下载属性
      * @author Wythe
      */
-    SaveProperty updateSaveSize(final SaveProperty saveProperty, final long saveSize) {
+    SaveProperty updateSaveSize(final SaveProperty saveProperty, final long saveSize) throws SaveException {
         if (saveProperty != null && saveSize >= 0 && saveSize != saveProperty.getSaveSize()) {
-            saveProperty.setSaveSize(saveSize);
-            if (!StringUtils.isEmpty(saveProperty.getTaskId()) && !this.isShut()) {
-                this.mCacheHandle.put(saveProperty.getTaskId(), encapsulate(saveProperty));
+            if (this.isShut()) {
+                throw new SaveException(saveProperty.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage());
             }
+            saveProperty.setSaveSize(saveSize);
+            this.mCacheHandle.put(saveProperty.getTaskId(), encapsulate(saveProperty));
         }
         return saveProperty;
-    }
-
-    /**
-     * 更新文件大小
-     *
-     * @param saveId   下载标识
-     * @param fileSize 文件大小
-     * @return 下载属性
-     * @author Cuzki
-     */
-    @SuppressWarnings("unchecked")
-    SaveProperty updateFileSize(final String saveId, final long fileSize) {
-        return StringUtils.isEmpty(saveId) || this.isShut() ? null : (
-                this.updateFileSize(decapsulate(this.mCacheHandle.get(saveId)), fileSize)
-        );
     }
 
     /**
@@ -302,12 +247,13 @@ public final class SaveRecorder {
      * @return 下载属性
      * @author Wythe
      */
-    SaveProperty updateFileSize(final SaveProperty saveProperty, final long fileSize) {
+    SaveProperty updateFileSize(final SaveProperty saveProperty, final long fileSize) throws SaveException {
         if (saveProperty != null && fileSize >= 0 && fileSize != saveProperty.getFileSize()) {
-            saveProperty.setFileSize(fileSize);
-            if (!StringUtils.isEmpty(saveProperty.getTaskId()) && !this.isShut()) {
-                this.mCacheHandle.put(saveProperty.getTaskId(), encapsulate(saveProperty));
+            if (this.isShut()) {
+                throw new SaveException(saveProperty.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage());
             }
+            saveProperty.setFileSize(fileSize);
+            this.mCacheHandle.put(saveProperty.getTaskId(), encapsulate(saveProperty));
         }
         return saveProperty;
     }
@@ -321,10 +267,14 @@ public final class SaveRecorder {
      * @author Cuzki
      */
     @SuppressWarnings("unchecked")
-    SaveProperty updateSaveStatus(final String saveId, final FetchStatus saveStatus) {
-        return StringUtils.isEmpty(saveId) || this.isShut() ? null : (
-                this.updateSaveStatus(decapsulate(this.mCacheHandle.get(saveId)), saveStatus)
-        );
+    SaveProperty updateSaveStatus(final String saveId, final FetchStatus saveStatus) throws SaveException {
+        if (!StringUtils.isEmpty(saveId) && saveStatus != null) {
+            if (this.isShut()) {
+                throw new SaveException(saveId, FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage());
+            }
+            return this.updateSaveStatus(decapsulate(this.mCacheHandle.get(saveId)), saveStatus);
+        }
+        return null;
     }
 
     /**
@@ -335,12 +285,13 @@ public final class SaveRecorder {
      * @return 下载属性
      * @author Wythe
      */
-    SaveProperty updateSaveStatus(final SaveProperty saveProperty, final FetchStatus saveStatus) {
+    SaveProperty updateSaveStatus(final SaveProperty saveProperty, final FetchStatus saveStatus) throws SaveException {
         if (saveProperty != null && saveStatus != null && !saveStatus.equals(saveProperty.getSaveStatus())) {
-            saveProperty.setSaveStatus(saveStatus);
-            if (!StringUtils.isEmpty(saveProperty.getTaskId()) && !this.isShut()) {
-                this.mCacheHandle.put(saveProperty.getTaskId(), encapsulate(saveProperty));
+            if (this.isShut()) {
+                throw new SaveException(saveProperty.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage());
             }
+            saveProperty.setSaveStatus(saveStatus);
+            this.mCacheHandle.put(saveProperty.getTaskId(), encapsulate(saveProperty));
         }
         return saveProperty;
     }

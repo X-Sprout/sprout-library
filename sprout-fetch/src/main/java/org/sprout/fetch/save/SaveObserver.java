@@ -9,8 +9,9 @@ import org.sprout.core.assist.StringUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * 下载观察对象类
@@ -20,10 +21,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class SaveObserver {
 
-    final static Map<String, List<SaveListener>> mListenerHash = new ConcurrentHashMap<>();
+    final static Map<String, Set<SaveListener>> mListenerHash = new ConcurrentHashMap<>();
 
-    static List<SaveListener> searchListener(final String saveId) {
-        final List<SaveListener> resultList = SaveObserver.mListenerHash.get(saveId);
+    static Set<SaveListener> searchListener(final String saveId) {
+        final Set<SaveListener> resultList = SaveObserver.mListenerHash.get(saveId);
         if (!CollectionUtils.isEmpty(resultList)) {
             final List<SaveListener> invalidList = new ArrayList<>();
             for (final SaveListener callback : resultList) {
@@ -47,13 +48,13 @@ public final class SaveObserver {
      */
     public static void registListener(final String saveId, final SaveListener listener) {
         if (!StringUtils.isEmpty(saveId) && listener != null) {
-            List<SaveListener> sendList = SaveObserver.mListenerHash.get(saveId);
+            Set<SaveListener> sendList = SaveObserver.mListenerHash.get(saveId);
             if (sendList != null) {
                 if (!sendList.contains(listener)) {
                     sendList.add(listener);
                 }
             } else {
-                if ((sendList = new CopyOnWriteArrayList<>()).add(listener)) {
+                if ((sendList = new CopyOnWriteArraySet<>()).add(listener)) {
                     SaveObserver.mListenerHash.put(saveId, sendList);
                 }
             }
@@ -69,7 +70,7 @@ public final class SaveObserver {
      */
     public static void removeListener(final String saveId, final SaveListener listener) {
         if (!StringUtils.isEmpty(saveId) && listener != null) {
-            final List<SaveListener> sendList = SaveObserver.mListenerHash.get(saveId);
+            final Set<SaveListener> sendList = SaveObserver.mListenerHash.get(saveId);
             if (!CollectionUtils.isEmpty(sendList)) {
                 sendList.remove(listener);
             }

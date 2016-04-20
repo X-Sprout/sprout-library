@@ -16,7 +16,7 @@ import org.sprout.fetch.spec.FetchStatus;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.RandomAccessFile;
-import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
@@ -85,7 +85,7 @@ final class SaveExecutor {
      */
     static void reportError(final String saveId, final FetchError saveError) {
         if (!StringUtils.isEmpty(saveId) && saveError != null) {
-            final List<SaveListener> callbackList = SaveObserver.searchListener(saveId);
+            final Set<SaveListener> callbackList = SaveObserver.searchListener(saveId);
             if (callbackList != null) {
                 SaveObserver.mListenerHash.remove(saveId);
                 if (callbackList.size() > 0) {
@@ -119,7 +119,7 @@ final class SaveExecutor {
      */
     static void reportAwait(final SaveProperty property) {
         if (property != null) {
-            final List<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
+            final Set<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
             if (!CollectionUtils.isEmpty(callbackList)) {
                 Observable.from(callbackList).observeOn(AndroidSchedulers.mainThread()).subscribe(new Action1<SaveListener>() {
                     @Override
@@ -143,37 +143,6 @@ final class SaveExecutor {
     }
 
     /**
-     * 下载开始通知
-     *
-     * @param property 下载属性
-     * @author Wythe
-     */
-    private static void reportStart(final SaveProperty property) {
-        if (property != null) {
-            final List<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
-            if (!CollectionUtils.isEmpty(callbackList)) {
-                Observable.from(callbackList).observeOn(AndroidSchedulers.mainThread()).subscribe(new Action1<SaveListener>() {
-                    @Override
-                    public void call(final SaveListener saveListener) {
-                        if (saveListener != null) {
-                            try {
-                                saveListener.onStart(property);
-                            } catch (Exception e) {
-                                if (Lc.E) {
-                                    Lc.t(SproutLib.name).e("FetchService save start callback exception.", e);
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-            if (Lc.D) {
-                Lc.t(SproutLib.name).d("FetchService save start: " + property.getTaskId());
-            }
-        }
-    }
-
-    /**
      * 下载暂停通知
      *
      * @param property 下载属性
@@ -181,7 +150,7 @@ final class SaveExecutor {
      */
     static void reportPause(final SaveProperty property) {
         if (property != null) {
-            final List<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
+            final Set<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
             if (!CollectionUtils.isEmpty(callbackList)) {
                 Observable.from(callbackList).observeOn(AndroidSchedulers.mainThread()).subscribe(new Action1<SaveListener>() {
                     @Override
@@ -212,7 +181,7 @@ final class SaveExecutor {
      */
     static void reportFinish(final SaveProperty property) {
         if (property != null) {
-            final List<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
+            final Set<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
             if (callbackList != null) {
                 SaveObserver.mListenerHash.remove(property.getTaskId());
                 if (callbackList.size() > 0) {
@@ -262,43 +231,48 @@ final class SaveExecutor {
      * @author Cuzki
      */
     @SuppressWarnings("unchecked")
-    static Observable<SaveProperty> observableDownLoad(final SaveRecorder recorder, final SaveProperty property, final Action0 unscheduler) {
+    static Observable<SaveProperty> observableDownLoad(final SaveRecorder recorder, final SaveProperty property, final Action0 unscheduler, final Action0 onterminate) {
         return recorder == null || property == null || unscheduler == null ? null : Observable.create(new Observable.OnSubscribe<SaveProperty>() {
             @Override
             public void call(final Subscriber<? super SaveProperty> subscriber) {
-                if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                    SaveExecutor.reportPause(property);
-                    subscriber.onCompleted();
-                } else {
-                    try {
-                        SaveExecutor.downloadFile(recorder, property, (Subscriber<SaveProperty>) subscriber);
-                    } catch (Exception e) {
-                        if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                            SaveExecutor.reportPause(property);
-                            subscriber.onCompleted();
-                        } else {
-                            subscriber.onError(new SaveException(
-                                    recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.UNKNOWN_ERR.getCode(), FetchError.UNKNOWN_ERR.getMessage(), e
-                            ));
+                try {
+                    SaveExecutor.downloadFile(recorder, property, (Subscriber<SaveProperty>) subscriber);
+                } catch (Exception e) {
+                    if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                        subscriber.onCompleted();
+                    } else {
+                        try {
+                            recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                        } catch (SaveException t) {
+                            subscriber.onError(new SaveException(property.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), e));
+                            return;
                         }
+                        subscriber.onError(new SaveException(property.getTaskId(), FetchError.UNKNOWN_ERR.getCode(), FetchError.UNKNOWN_ERR.getMessage(), e));
                     }
                 }
             }
-        }).doOnTerminate(unscheduler).doOnUnsubscribe(unscheduler).subscribeOn(Schedulers.io()).onBackpressureLatest().observeOn(AndroidSchedulers.mainThread()).doOnError(new Action1<Throwable>() {
+        }).doOnUnsubscribe(unscheduler).doOnTerminate(onterminate).subscribeOn(Schedulers.io()).onBackpressureLatest().observeOn(AndroidSchedulers.mainThread()).doOnError(new Action1<Throwable>() {
             @Override
             public void call(final Throwable throwable) {
                 // 下载异常
                 final String saveId = property.getTaskId();
                 if (!StringUtils.isEmpty(saveId)) {
-                    if (!recorder.isShut() && !FetchStatus.FINISH.equals(property.getSaveStatus())) {
-                        recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                    boolean trouble = false;
+                    if (!FetchStatus.FINISH.equals(property.getSaveStatus())) {
+                        try {
+                            recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                        } catch (SaveException e) {
+                            trouble = true;
+                        }
                     }
                     // 异常通知
-                    final List<SaveListener> callbackList = SaveObserver.searchListener(saveId);
+                    final Set<SaveListener> callbackList = SaveObserver.searchListener(saveId);
                     if (callbackList != null) {
                         if (callbackList.size() > 0) {
-                            final SaveException report = SaveException.class.isInstance(throwable) ? (SaveException) throwable : new SaveException(
-                                    saveId, FetchError.UNKNOWN_ERR.getCode(), FetchError.UNKNOWN_ERR.getMessage(), throwable
+                            final SaveException report = trouble ? new SaveException(saveId, FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), throwable) : (
+                                    SaveException.class.isInstance(throwable) ? (SaveException) throwable : new SaveException(
+                                            saveId, FetchError.UNKNOWN_ERR.getCode(), FetchError.UNKNOWN_ERR.getMessage(), throwable
+                                    )
                             );
                             for (final SaveListener callback : callbackList) {
                                 if (callback != null) {
@@ -321,25 +295,30 @@ final class SaveExecutor {
         }).doOnSubscribe(new Action0() {
             @Override
             public void call() {
-                // 下载准备
-                final String saveId = property.getTaskId();
-                if (!StringUtils.isEmpty(saveId)) {
-                    final List<SaveListener> callbackList = SaveObserver.searchListener(saveId);
+                if (!FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                    // 更新状态
+                    try {
+                        recorder.updateSaveStatus(property, FetchStatus.START);
+                    } catch (SaveException e) {
+                        throw new RuntimeException(e);
+                    }
+                    // 启动通知
+                    final Set<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
                     if (!CollectionUtils.isEmpty(callbackList)) {
                         for (final SaveListener saveListener : callbackList) {
                             if (saveListener != null) {
                                 try {
-                                    saveListener.onReady(saveId);
+                                    saveListener.onStart(property);
                                 } catch (Exception e) {
                                     if (Lc.E) {
-                                        Lc.t(SproutLib.name).e("FetchService save ready callback exception.", e);
+                                        Lc.t(SproutLib.name).e("FetchService save start callback exception.", e);
                                     }
                                 }
                             }
                         }
                     }
                     if (Lc.D) {
-                        Lc.t(SproutLib.name).d("FetchService save ready: " + saveId);
+                        Lc.t(SproutLib.name).d("FetchService save start: " + property.getTaskId());
                     }
                 }
             }
@@ -350,11 +329,26 @@ final class SaveExecutor {
         final File saveFile = new File(property.getSavePath());
         if (saveFile.exists()) {
             if (property.getFileSize() > 0 && property.getFileSize() == property.getSaveSize() && property.getFileSize() == saveFile.length()) {
-                SaveExecutor.reportFinish(recorder.updateSaveStatus(property, FetchStatus.FINISH));
+                // 下载完成
+                try {
+                    recorder.updateSaveStatus(property, FetchStatus.FINISH);
+                } catch (SaveException e) {
+                    SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                    subscriber.onCompleted();
+                    return;
+                }
+                SaveExecutor.reportFinish(property);
                 subscriber.onCompleted();
             } else {
                 // 已下载文件数据不匹配
-                SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.SAVEFILE_DATA_ERR);
+                try {
+                    recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                } catch (SaveException e) {
+                    SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                    subscriber.onCompleted();
+                    return;
+                }
+                SaveExecutor.reportError(property.getTaskId(), FetchError.SAVEFILE_DATA_ERR);
                 subscriber.onCompleted();
             }
             return;
@@ -365,28 +359,62 @@ final class SaveExecutor {
                 final long tempSize = tempFile.length();
                 // 同步缓存大小
                 if (property.getSaveSize() != tempSize) {
-                    recorder.updateSaveSize(property, tempSize);
+                    try {
+                        recorder.updateSaveSize(property, tempSize);
+                    } catch (SaveException e) {
+                        SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                        subscriber.onCompleted();
+                        return;
+                    }
                 }
                 if (property.getSaveSize() > property.getFileSize()) {
                     // 临时文件大小异常
-                    SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.SAVESIZE_MORE_ERR);
+                    try {
+                        recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                    } catch (SaveException e) {
+                        SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                        subscriber.onCompleted();
+                        return;
+                    }
+                    SaveExecutor.reportError(property.getTaskId(), FetchError.SAVESIZE_MORE_ERR);
                     subscriber.onCompleted();
                     return;
                 }
                 if (property.getSaveSize() == property.getFileSize()) {
                     // 临时文件已成功下载
                     if (tempFile.renameTo(saveFile)) {
-                        SaveExecutor.reportFinish(recorder.updateSaveStatus(property, FetchStatus.FINISH));
+                        try {
+                            recorder.updateSaveStatus(property, FetchStatus.FINISH);
+                        } catch (SaveException e) {
+                            SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                            subscriber.onCompleted();
+                            return;
+                        }
+                        SaveExecutor.reportFinish(property);
                         subscriber.onCompleted();
                     } else {
-                        SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.TEMPFILE_CONVERT_ERR);
+                        try {
+                            recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                        } catch (SaveException e) {
+                            SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                            subscriber.onCompleted();
+                            return;
+                        }
+                        SaveExecutor.reportError(property.getTaskId(), FetchError.TEMPFILE_CONVERT_ERR);
                         subscriber.onCompleted();
                     }
                     return;
                 }
             } else {
                 if (property.getSaveSize() > 0) {
-                    SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.FILESIZE_LOST_ERR);
+                    try {
+                        recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                    } catch (SaveException e) {
+                        SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                        subscriber.onCompleted();
+                        return;
+                    }
+                    SaveExecutor.reportError(property.getTaskId(), FetchError.FILESIZE_LOST_ERR);
                     subscriber.onCompleted();
                     return;
                 } else {
@@ -394,14 +422,19 @@ final class SaveExecutor {
                 }
             }
         } else {
+            // 更新缓存大小
             if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                SaveExecutor.reportPause(property);
                 subscriber.onCompleted();
                 return;
             } else {
-                // 更新缓存大小
                 if (property.getSaveSize() > 0) {
-                    recorder.updateSaveSize(property, 0L);
+                    try {
+                        recorder.updateSaveSize(property, 0L);
+                    } catch (SaveException e) {
+                        SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                        subscriber.onCompleted();
+                        return;
+                    }
                 }
             }
         }
@@ -413,7 +446,14 @@ final class SaveExecutor {
         // 网络检测
         if (!NetUtils.isConnected(true)) {
             // 网络异常
-            SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.NETWORK_ERR);
+            try {
+                recorder.updateSaveStatus(property, FetchStatus.ERROR);
+            } catch (SaveException e) {
+                SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                subscriber.onCompleted();
+                return;
+            }
+            SaveExecutor.reportError(property.getTaskId(), FetchError.NETWORK_ERR);
             subscriber.onCompleted();
             return;
         }
@@ -425,12 +465,15 @@ final class SaveExecutor {
             ).execute();
         } catch (Exception e) {
             if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                SaveExecutor.reportPause(property);
                 subscriber.onCompleted();
             } else {
-                subscriber.onError(new SaveException(
-                        recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.REQUEST_ERR.getCode(), FetchError.REQUEST_ERR.getMessage(), e
-                ));
+                try {
+                    recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                } catch (SaveException t) {
+                    subscriber.onError(new SaveException(property.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), e));
+                    return;
+                }
+                subscriber.onError(new SaveException(property.getTaskId(), FetchError.REQUEST_ERR.getCode(), FetchError.REQUEST_ERR.getMessage(), e));
             }
             return;
         }
@@ -441,12 +484,15 @@ final class SaveExecutor {
                     Thread.sleep(SAVE_DORMANT);
                 } catch (Exception e) {
                     if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                        SaveExecutor.reportPause(property);
                         subscriber.onCompleted();
                     } else {
-                        subscriber.onError(new SaveException(
-                                recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.RETRY_ERR.getCode(), FetchError.RETRY_ERR.getMessage(), e
-                        ));
+                        try {
+                            recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                        } catch (SaveException t) {
+                            subscriber.onError(new SaveException(property.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), e));
+                            return;
+                        }
+                        subscriber.onError(new SaveException(property.getTaskId(), FetchError.RETRY_ERR.getCode(), FetchError.RETRY_ERR.getMessage(), e));
                     }
                     return;
                 }
@@ -454,7 +500,14 @@ final class SaveExecutor {
                 SaveExecutor.downloadFile(recorder, property, subscriber, saveRetry - 1, saveFile, tempFile);
             } else {
                 // 网络请求应答失败
-                SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.REQUEST_ERR);
+                try {
+                    recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                } catch (SaveException e) {
+                    SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                    subscriber.onCompleted();
+                    return;
+                }
+                SaveExecutor.reportError(property.getTaskId(), FetchError.REQUEST_ERR);
                 subscriber.onCompleted();
             }
             return;
@@ -463,7 +516,14 @@ final class SaveExecutor {
         long fileSize = httpResponse.body().contentLength();
         if (fileSize <= 0) {
             // 远程文件大小异常
-            SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.RESPFILE_ERR);
+            try {
+                recorder.updateSaveStatus(property, FetchStatus.ERROR);
+            } catch (SaveException e) {
+                SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                subscriber.onCompleted();
+                return;
+            }
+            SaveExecutor.reportError(property.getTaskId(), FetchError.RESPFILE_ERR);
             subscriber.onCompleted();
             return;
         }
@@ -472,7 +532,14 @@ final class SaveExecutor {
         if (property.getFileSize() > 0 && property.getFileSize() != fileSize) {
             if ((property.getFileSize() - fstmp) != fileSize) {
                 // 远程文件大小校验
-                SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.FILESIZE_CONFLICT_ERR);
+                try {
+                    recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                } catch (SaveException e) {
+                    SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                    subscriber.onCompleted();
+                    return;
+                }
+                SaveExecutor.reportError(property.getTaskId(), FetchError.FILESIZE_CONFLICT_ERR);
                 subscriber.onCompleted();
                 return;
             }
@@ -485,12 +552,15 @@ final class SaveExecutor {
             outer = new RandomAccessFile(tempFile, MODE_OUTPUT);
         } catch (Exception e) {
             if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                SaveExecutor.reportPause(property);
                 subscriber.onCompleted();
             } else {
-                subscriber.onError(new SaveException(
-                        recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.TEMPFILE_CHAN_ERR.getCode(), FetchError.TEMPFILE_CHAN_ERR.getMessage(), e
-                ));
+                try {
+                    recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                } catch (SaveException t) {
+                    subscriber.onError(new SaveException(property.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), e));
+                    return;
+                }
+                subscriber.onError(new SaveException(property.getTaskId(), FetchError.TEMPFILE_CHAN_ERR.getCode(), FetchError.TEMPFILE_CHAN_ERR.getMessage(), e));
             }
             return;
         }
@@ -503,41 +573,38 @@ final class SaveExecutor {
                 t.printStackTrace();
             } finally {
                 if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                    SaveExecutor.reportPause(property);
                     subscriber.onCompleted();
                 } else {
-                    subscriber.onError(new SaveException(
-                            recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.TEMPFILE_SEEK_ERR.getCode(), FetchError.TEMPFILE_SEEK_ERR.getMessage(), e
-                    ));
+                    try {
+                        recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                    } catch (SaveException t) {
+                        subscriber.onError(new SaveException(property.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), e));
+                        return;
+                    }
+                    subscriber.onError(new SaveException(property.getTaskId(), FetchError.TEMPFILE_SEEK_ERR.getCode(), FetchError.TEMPFILE_SEEK_ERR.getMessage(), e));
                 }
             }
             return;
         }
-        // 判断任务状态
+        // 首次下载文件
         if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-            SaveExecutor.reportPause(property);
             subscriber.onCompleted();
             return;
         } else {
-            // 首次下载文件
             if (property.getFileSize() < 1) {
-                recorder.updateFileSize(property, fileSize);
-            }
-            if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                SaveExecutor.reportPause(property);
-                subscriber.onCompleted();
-                return;
-            } else {
-                // 更新下载状态
-                SaveExecutor.reportStart(recorder.updateSaveStatus(property, FetchStatus.START));
+                try {
+                    recorder.updateFileSize(property, fileSize);
+                } catch (SaveException e) {
+                    SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                    subscriber.onCompleted();
+                    return;
+                }
             }
         }
         // 设置下载缓存
         final BufferedInputStream bis = new BufferedInputStream(
                 httpResponse.body().byteStream(), SIZE_BUFFER
         );
-        // 写入下载文件
-        boolean success = true;
         try {
             int count, begin;
             final byte[] cache = new byte[SIZE_BUFFER];
@@ -559,14 +626,16 @@ final class SaveExecutor {
                 subscriber.onNext(recorder.updateSaveSize(property, fstmp));
             }
         } catch (Exception e) {
-            success = false;
             if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                SaveExecutor.reportPause(property);
                 subscriber.onCompleted();
             } else {
-                subscriber.onError(new SaveException(
-                        recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.WRITE_ERR.getCode(), FetchError.WRITE_ERR.getMessage(), e
-                ));
+                try {
+                    recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                } catch (SaveException t) {
+                    subscriber.onError(new SaveException(property.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), e));
+                    return;
+                }
+                subscriber.onError(new SaveException(property.getTaskId(), FetchError.WRITE_ERR.getCode(), FetchError.WRITE_ERR.getMessage(), e));
             }
             return;
         } finally {
@@ -580,33 +649,63 @@ final class SaveExecutor {
                 outer.close();
             } catch (Exception e) {
                 if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                    if (success) {
-                        SaveExecutor.reportPause(property);
-                    }
                     subscriber.onCompleted();
                 } else {
-                    subscriber.onError(new SaveException(
-                            recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.TEMPFILE_FREE_ERR.getCode(), FetchError.TEMPFILE_FREE_ERR.getMessage(), e
-                    ));
+                    try {
+                        recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                    } catch (SaveException t) {
+                        subscriber.onError(new SaveException(property.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), e));
+                        return;
+                    }
+                    subscriber.onError(new SaveException(property.getTaskId(), FetchError.TEMPFILE_FREE_ERR.getCode(), FetchError.TEMPFILE_FREE_ERR.getMessage(), e));
                 }
                 return;
             }
         }
         // 校验下载状态
-        if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-            SaveExecutor.reportPause(property);
-        } else {
+        if (!FetchStatus.PAUSE.equals(property.getSaveStatus())) {
             // 校验是否完成
+            boolean trouble = false;
             if (property.getSaveSize() == fileSize && property.getFileSize() == fileSize) {
                 // 临时文件转换
                 if (tempFile.renameTo(saveFile)) {
-                    SaveExecutor.reportFinish(recorder.updateSaveStatus(property, FetchStatus.FINISH));
+                    try {
+                        recorder.updateSaveStatus(property, FetchStatus.FINISH);
+                    } catch (SaveException e) {
+                        trouble = true;
+                    } finally {
+                        if (!trouble) {
+                            SaveExecutor.reportFinish(property);
+                        } else {
+                            SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                        }
+                    }
                 } else {
                     // 文件转换失败
-                    SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.TEMPFILE_CONVERT_ERR);
+                    try {
+                        recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                    } catch (SaveException e) {
+                        trouble = true;
+                    } finally {
+                        if (trouble) {
+                            SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                        } else {
+                            SaveExecutor.reportError(property.getTaskId(), FetchError.TEMPFILE_CONVERT_ERR);
+                        }
+                    }
                 }
             } else {
-                SaveExecutor.reportError(recorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.SAVESIZE_LESS_ERR);
+                try {
+                    recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                } catch (SaveException e) {
+                    trouble = true;
+                } finally {
+                    if (trouble) {
+                        SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                    } else {
+                        SaveExecutor.reportError(property.getTaskId(), FetchError.SAVESIZE_LESS_ERR);
+                    }
+                }
             }
         }
         subscriber.onCompleted();

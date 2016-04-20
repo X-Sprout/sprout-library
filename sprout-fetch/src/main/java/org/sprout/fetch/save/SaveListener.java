@@ -19,8 +19,6 @@ public abstract class SaveListener extends FetchListener {
         super(context);
     }
 
-    public abstract void onReady(final String saveId);
-
     public abstract void onError(final SaveException report);
 
     public abstract void onAwait(final SaveProperty property);

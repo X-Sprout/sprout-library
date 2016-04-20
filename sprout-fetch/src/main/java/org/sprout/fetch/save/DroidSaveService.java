@@ -171,9 +171,9 @@ public final class DroidSaveService extends Service {
     }
 
     private void clearSave(final String saveId) {
+        SaveObserver.mListenerHash.remove(saveId);
         this.stopSaveScheduler(saveId);
         this.stopSaveSubscription(saveId);
-        SaveObserver.mListenerHash.remove(saveId);
         SaveExecutor.destroyDownLoad(saveId, this.mSaveRecorder);
         if (Lc.D) {
             Lc.t(SproutLib.name).d("FetchService save abort: " + saveId);
@@ -197,7 +197,16 @@ public final class DroidSaveService extends Service {
                 return;
             }
             if (FetchStatus.START.equals(status) || FetchStatus.AWAIT.equals(status)) {
-                SaveExecutor.reportPause(this.mSaveRecorder.updateSaveStatus(property, FetchStatus.PAUSE));
+                boolean report = true;
+                try {
+                    this.mSaveRecorder.updateSaveStatus(property, FetchStatus.PAUSE);
+                } catch (SaveException e) {
+                    report = false;
+                } finally {
+                    if (report) {
+                        SaveExecutor.reportPause(property);
+                    }
+                }
                 return;
             }
         }
@@ -246,30 +255,52 @@ public final class DroidSaveService extends Service {
                         SaveExecutor.reportFinish(property);
                     } else {
                         // 下载异常
-                        SaveExecutor.reportError(this.mSaveRecorder.updateSaveStatus(property, FetchStatus.ERROR).getTaskId(), FetchError.SAVEFILE_DATA_ERR);
+                        try {
+                            this.mSaveRecorder.updateSaveStatus(property, FetchStatus.ERROR);
+                        } catch (SaveException e) {
+                            e.printStackTrace();
+                        } finally {
+                            SaveExecutor.reportError(property.getTaskId(), FetchError.SAVEFILE_DATA_ERR);
+                        }
                     }
                     return;
                 }
-                // 更新大小
+                // 文件修正
                 final File tempFile = new File(SaveExecutor.getTempFilePath(saveScheduler.savePath));
                 if (tempFile.exists()) {
                     tempFile.delete();
                 }
-                // 属性还原
-                property = this.mSaveRecorder.revertScheduler(property, saveScheduler);
+                try {
+                    this.mSaveRecorder.revertScheduler(property, saveScheduler);
+                } catch (SaveException e) {
+                    SaveExecutor.reportError(property.getTaskId(), FetchError.RECORD_ERR);
+                    return;
+                }
             }
         }
         // 判断队列
         SaveScheduler takeScheduler = this.searchSaveScheduler(saveScheduler.saveId);
         if (takeScheduler != null) {
             if (FetchPrior.NOW.getValue() != saveScheduler.savePrior) {
-                // 正在等待
-                takeScheduler.saveUrl = saveScheduler.saveUrl;
-                takeScheduler.saveRetry = saveScheduler.saveRetry;
-                takeScheduler.savePrior = saveScheduler.savePrior;
-                takeScheduler.saveTimeout = saveScheduler.saveTimeout;
-                // 等待通知
-                SaveExecutor.reportAwait(this.mSaveRecorder.updateScheduler(property, saveScheduler));
+                boolean update = true;
+                try {
+                    property = this.mSaveRecorder.updateScheduler(property, saveScheduler);
+                } catch (SaveException e) {
+                    update = false;
+                } finally {
+                    if (update) {
+                        takeScheduler.saveUrl = saveScheduler.saveUrl;
+                        takeScheduler.saveRetry = saveScheduler.saveRetry;
+                        takeScheduler.savePrior = saveScheduler.savePrior;
+                        takeScheduler.saveTimeout = saveScheduler.saveTimeout;
+                        // 等待通知
+                        SaveExecutor.reportAwait(property);
+                    } else {
+                        this.mSchedulerList.remove(takeScheduler);
+                        // 异常通知
+                        SaveExecutor.reportError(saveScheduler.saveId, FetchError.RECORD_ERR);
+                    }
+                }
                 return;
             }
             this.mSchedulerList.remove(takeScheduler);
@@ -278,17 +309,34 @@ public final class DroidSaveService extends Service {
                 if (FetchService.getSaveQueue() <= this.mSchedulerList.size()) {
                     // 队列异常
                     if (property != null) {
-                        this.mSaveRecorder.updateSaveStatus(property, FetchStatus.ERROR);
+                        try {
+                            this.mSaveRecorder.updateSaveStatus(property, FetchStatus.ERROR);
+                        } catch (SaveException e) {
+                            SaveExecutor.reportError(saveScheduler.saveId, FetchError.RECORD_ERR);
+                            return;
+                        }
                     }
                     SaveExecutor.reportError(saveScheduler.saveId, FetchError.QUEUE_ERR);
                 } else {
                     // 等待下载
-                    if (FetchPrior.HIGH.getValue() == saveScheduler.savePrior) {
-                        this.mSchedulerList.addLast(saveScheduler);
-                    } else {
-                        this.mSchedulerList.addFirst(saveScheduler);
+                    boolean update = true;
+                    try {
+                        property = this.mSaveRecorder.updateScheduler(property, saveScheduler);
+                    } catch (SaveException e) {
+                        update = false;
+                    } finally {
+                        if (update) {
+                            if (FetchPrior.HIGH.getValue() == saveScheduler.savePrior) {
+                                this.mSchedulerList.addLast(saveScheduler);
+                            } else {
+                                this.mSchedulerList.addFirst(saveScheduler);
+                            }
+                            // 等待通知
+                            SaveExecutor.reportAwait(property);
+                        } else {
+                            SaveExecutor.reportError(saveScheduler.saveId, FetchError.RECORD_ERR);
+                        }
                     }
-                    SaveExecutor.reportAwait(this.mSaveRecorder.updateScheduler(property, saveScheduler));
                 }
                 return;
             }
@@ -321,13 +369,33 @@ public final class DroidSaveService extends Service {
                 final SaveScheduler wipeScheduler = mSchedulerList.removeFirst();
                 if (wipeScheduler != null) {
                     // 队列异常
-                    this.mSaveRecorder.updateSaveStatus(
-                            wipeScheduler.saveId, FetchStatus.ERROR
-                    );
-                    SaveExecutor.reportError(wipeScheduler.saveId, FetchError.QUEUE_ERR);
+                    boolean update = true;
+                    try {
+                        this.mSaveRecorder.updateSaveStatus(wipeScheduler.saveId, FetchStatus.ERROR);
+                    } catch (SaveException e) {
+                        update = false;
+                    } finally {
+                        if (update) {
+                            SaveExecutor.reportError(wipeScheduler.saveId, FetchError.QUEUE_ERR);
+                        } else {
+                            SaveExecutor.reportError(wipeScheduler.saveId, FetchError.RECORD_ERR);
+                        }
+                    }
                 }
             }
-            SaveExecutor.reportAwait(this.mSaveRecorder.updateScheduler(property, takeScheduler));
+            // 加入下载
+            boolean update = true;
+            try {
+                property = this.mSaveRecorder.updateScheduler(property, takeScheduler);
+            } catch (SaveException e) {
+                update = false;
+            } finally {
+                if (update) {
+                    SaveExecutor.reportAwait(property);
+                } else {
+                    SaveExecutor.reportError(saveScheduler.saveId, FetchError.RECORD_ERR);
+                }
+            }
         }
         // 启动下载
         if (saveScheduler != takeScheduler) {
@@ -367,7 +435,18 @@ public final class DroidSaveService extends Service {
                     switch (saveProperty.getSaveStatus()) {
                         case AWAIT:
                         case START: {
-                            SaveExecutor.reportPause(this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE));
+                            boolean update = true;
+                            try {
+                                this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE);
+                            } catch (SaveException e) {
+                                update = false;
+                            } finally {
+                                if (update) {
+                                    SaveExecutor.reportPause(saveProperty);
+                                } else {
+                                    SaveExecutor.reportError(saveProperty.getTaskId(), FetchError.RECORD_ERR);
+                                }
+                            }
                             break;
                         }
                     }
@@ -404,7 +483,11 @@ public final class DroidSaveService extends Service {
             final SaveProperty saveProperty = saveSubscription.getSaveProperty();
             if (saveSubscription.isSubscribed()) {
                 if (this.mSaveRecorder != null) {
-                    this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE);
+                    try {
+                        this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE);
+                    } catch (SaveException e) {
+                        SaveExecutor.reportError(saveProperty.getTaskId(), FetchError.RECORD_ERR);
+                    }
                 }
                 saveSubscription.unsubscribe();
             } else {
@@ -414,7 +497,18 @@ public final class DroidSaveService extends Service {
                         switch (saveProperty.getSaveStatus()) {
                             case AWAIT:
                             case START: {
-                                SaveExecutor.reportPause(this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE));
+                                boolean update = true;
+                                try {
+                                    this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE);
+                                } catch (SaveException e) {
+                                    update = false;
+                                } finally {
+                                    if (update) {
+                                        SaveExecutor.reportPause(saveProperty);
+                                    } else {
+                                        SaveExecutor.reportError(saveProperty.getTaskId(), FetchError.RECORD_ERR);
+                                    }
+                                }
                                 break;
                             }
                         }
@@ -427,23 +521,26 @@ public final class DroidSaveService extends Service {
     private void registSaveSubscription(final SaveRecorder saveRecorder, final SaveScheduler saveScheduler) {
         final SaveSubscription saveSubscription = this.mSubscriptionMap.get(saveScheduler.saveId);
         if (saveSubscription == null || !saveSubscription.isSubscribed()) {
+            final SaveProperty saveProperty;
             if (this.mSaveRecorder != null) {
-                SaveProperty saveProperty = this.mSaveRecorder.selectRecorder(saveScheduler.saveId);
-                if (saveProperty != null) {
-                    if (FetchStatus.PAUSE.equals(saveProperty.getSaveStatus())) {
-                        if (saveSubscription != null) {
-                            this.mSubscriptionMap.remove(saveScheduler.saveId);
+                final SaveProperty findProperty = this.mSaveRecorder.selectRecorder(saveScheduler.saveId);
+                if (findProperty != null) {
+                    final File saveFile = new File(saveScheduler.savePath), tempFile = new File(
+                            SaveExecutor.getTempFilePath(saveScheduler.savePath)
+                    );
+                    if (!saveFile.exists() && !tempFile.exists()) {
+                        try {
+                            saveProperty = this.mSaveRecorder.revertScheduler(findProperty, saveScheduler);
+                        } catch (SaveException e) {
+                            SaveExecutor.reportError(findProperty.getTaskId(), FetchError.RECORD_ERR);
+                            return;
                         }
-                        SaveExecutor.reportPause(saveProperty);
-                        return;
                     } else {
-                        final File saveFile = new File(saveScheduler.savePath), tempFile = new File(
-                                SaveExecutor.getTempFilePath(saveScheduler.savePath)
-                        );
-                        if (!saveFile.exists() && !tempFile.exists()) {
-                            this.mSaveRecorder.revertScheduler(saveProperty, saveScheduler);
-                        } else {
-                            this.mSaveRecorder.updateScheduler(saveProperty, saveScheduler);
+                        try {
+                            saveProperty = this.mSaveRecorder.updateScheduler(findProperty, saveScheduler);
+                        } catch (SaveException e) {
+                            SaveExecutor.reportError(findProperty.getTaskId(), FetchError.RECORD_ERR);
+                            return;
                         }
                     }
                 } else {
@@ -459,6 +556,13 @@ public final class DroidSaveService extends Service {
                 }
                 if (saveProperty != null) {
                     final Observable<SaveProperty> observable = SaveExecutor.observableDownLoad(saveRecorder, saveProperty, new Action0() {
+                        @Override
+                        public void call() {
+                            if (FetchStatus.PAUSE.equals(saveProperty.getSaveStatus())) {
+                                SaveExecutor.reportPause(saveProperty);
+                            }
+                        }
+                    }, new Action0() {
                         @Override
                         public void call() {
                             mSubscriptionMap.remove(saveScheduler.saveId);
