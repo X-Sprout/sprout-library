@@ -235,19 +235,23 @@ final class SaveExecutor {
         return recorder == null || property == null || unscheduler == null ? null : Observable.create(new Observable.OnSubscribe<SaveProperty>() {
             @Override
             public void call(final Subscriber<? super SaveProperty> subscriber) {
-                try {
-                    SaveExecutor.downloadFile(recorder, property, (Subscriber<SaveProperty>) subscriber);
-                } catch (Exception e) {
-                    if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
-                        subscriber.onCompleted();
-                    } else {
-                        try {
-                            recorder.updateSaveStatus(property, FetchStatus.ERROR);
-                        } catch (SaveException t) {
-                            subscriber.onError(new SaveException(property.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), e));
-                            return;
+                if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                    subscriber.onCompleted();
+                } else {
+                    try {
+                        SaveExecutor.downloadFile(recorder, property, (Subscriber<SaveProperty>) subscriber);
+                    } catch (Exception e) {
+                        if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                            subscriber.onCompleted();
+                        } else {
+                            try {
+                                recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                            } catch (SaveException t) {
+                                subscriber.onError(new SaveException(property.getTaskId(), FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), e));
+                                return;
+                            }
+                            subscriber.onError(new SaveException(property.getTaskId(), FetchError.UNKNOWN_ERR.getCode(), FetchError.UNKNOWN_ERR.getMessage(), e));
                         }
-                        subscriber.onError(new SaveException(property.getTaskId(), FetchError.UNKNOWN_ERR.getCode(), FetchError.UNKNOWN_ERR.getMessage(), e));
                     }
                 }
             }
