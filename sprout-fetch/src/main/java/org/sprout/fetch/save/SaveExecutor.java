@@ -4,7 +4,6 @@
 package org.sprout.fetch.save;
 
 import org.sprout.SproutLib;
-import org.sprout.bale.reactivex.schedulers.AndroidSchedulers;
 import org.sprout.core.assist.CollectionUtils;
 import org.sprout.core.assist.ErrorUtils;
 import org.sprout.core.assist.NetUtils;
@@ -89,7 +88,7 @@ final class SaveExecutor {
             if (callbackList != null) {
                 SaveObserver.mListenerHash.remove(saveId);
                 if (callbackList.size() > 0) {
-                    Observable.from(callbackList).observeOn(AndroidSchedulers.mainThread()).subscribe(new Action1<SaveListener>() {
+                    Observable.from(callbackList).subscribe(new Action1<SaveListener>() {
                         @Override
                         public void call(final SaveListener saveListener) {
                             if (saveListener != null) {
@@ -121,7 +120,7 @@ final class SaveExecutor {
         if (property != null) {
             final Set<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
             if (!CollectionUtils.isEmpty(callbackList)) {
-                Observable.from(callbackList).observeOn(AndroidSchedulers.mainThread()).subscribe(new Action1<SaveListener>() {
+                Observable.from(callbackList).subscribe(new Action1<SaveListener>() {
                     @Override
                     public void call(final SaveListener saveListener) {
                         if (saveListener != null) {
@@ -152,7 +151,7 @@ final class SaveExecutor {
         if (property != null) {
             final Set<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
             if (!CollectionUtils.isEmpty(callbackList)) {
-                Observable.from(callbackList).observeOn(AndroidSchedulers.mainThread()).subscribe(new Action1<SaveListener>() {
+                Observable.from(callbackList).subscribe(new Action1<SaveListener>() {
                     @Override
                     public void call(final SaveListener saveListener) {
                         if (saveListener != null) {
@@ -185,7 +184,7 @@ final class SaveExecutor {
             if (callbackList != null) {
                 SaveObserver.mListenerHash.remove(property.getTaskId());
                 if (callbackList.size() > 0) {
-                    Observable.from(callbackList).observeOn(AndroidSchedulers.mainThread()).subscribe(new Action1<SaveListener>() {
+                    Observable.from(callbackList).subscribe(new Action1<SaveListener>() {
                         @Override
                         public void call(final SaveListener saveListener) {
                             if (saveListener != null) {
@@ -255,7 +254,7 @@ final class SaveExecutor {
                     }
                 }
             }
-        }).doOnUnsubscribe(unscheduler).doOnTerminate(onterminate).subscribeOn(Schedulers.io()).onBackpressureLatest().observeOn(AndroidSchedulers.mainThread()).doOnError(new Action1<Throwable>() {
+        }).doOnUnsubscribe(unscheduler).doOnTerminate(onterminate).subscribeOn(Schedulers.io()).onBackpressureLatest().doOnError(new Action1<Throwable>() {
             @Override
             public void call(final Throwable throwable) {
                 // 下载异常
