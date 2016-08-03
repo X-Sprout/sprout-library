@@ -50,6 +50,16 @@ public final class LogcatService {
     /**
      * 初始化日志服务
      *
+     * @param level 记录等级
+     * @author Wythe
+     */
+    public static void init(final LogcatLevel level) {
+        LogcatService.init(StringUtils.EMPTY, level);
+    }
+
+    /**
+     * 初始化日志服务
+     *
      * @param label 日志标签
      * @param level 记录等级
      * @author Wythe

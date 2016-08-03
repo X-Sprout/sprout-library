@@ -254,7 +254,7 @@ final class SaveExecutor {
                     }
                 }
             }
-        }).doOnUnsubscribe(unscheduler).doOnTerminate(onterminate).subscribeOn(Schedulers.io()).onBackpressureLatest().doOnError(new Action1<Throwable>() {
+        }).doOnTerminate(onterminate).doOnUnsubscribe(unscheduler).subscribeOn(Schedulers.io()).onBackpressureLatest().doOnError(new Action1<Throwable>() {
             @Override
             public void call(final Throwable throwable) {
                 // 下载异常
@@ -298,7 +298,7 @@ final class SaveExecutor {
         }).doOnSubscribe(new Action0() {
             @Override
             public void call() {
-                if (!FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                if (FetchStatus.AWAIT.equals(property.getSaveStatus())) {
                     // 更新状态
                     try {
                         recorder.updateSaveStatus(property, FetchStatus.START);

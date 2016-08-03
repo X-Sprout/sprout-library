@@ -60,9 +60,9 @@ public final class DroidSaveService extends Service {
 
     private SaveRecorder mSaveRecorder;
 
-    private final Deque<SaveScheduler> mSchedulerList = new LinkedList<>();
+    private volatile Deque<SaveScheduler> mSchedulerList = new LinkedList<>();
 
-    private final Map<String, SaveSubscription> mSubscriptionMap = new ConcurrentHashMap<>();
+    private volatile Map<String, SaveSubscription> mSubscriptionMap = new ConcurrentHashMap<>();
 
     @Override
     public int onStartCommand(final Intent intent, final int flags, final int startId) {
@@ -221,11 +221,6 @@ public final class DroidSaveService extends Service {
         final SaveSubscription saveSubscription = this.searchSaveSubscription(saveId);
         if (saveSubscription != null) {
             this.stopSaveSubscription(saveSubscription);
-        }
-        if (saveScheduler != null || saveSubscription != null) {
-            if (Lc.D) {
-                Lc.t(SproutLib.name).d("FetchService save pause: " + saveId);
-            }
         }
     }
 
@@ -490,30 +485,6 @@ public final class DroidSaveService extends Service {
                     }
                 }
                 saveSubscription.unsubscribe();
-            } else {
-                if (saveProperty != null) {
-                    this.mSubscriptionMap.remove(saveProperty.getTaskId());
-                    if (this.mSaveRecorder != null) {
-                        switch (saveProperty.getSaveStatus()) {
-                            case AWAIT:
-                            case START: {
-                                boolean update = true;
-                                try {
-                                    this.mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE);
-                                } catch (SaveException e) {
-                                    update = false;
-                                } finally {
-                                    if (update) {
-                                        SaveExecutor.reportPause(saveProperty);
-                                    } else {
-                                        SaveExecutor.reportError(saveProperty.getTaskId(), FetchError.RECORD_ERR);
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
             }
         }
     }
@@ -560,6 +531,16 @@ public final class DroidSaveService extends Service {
                         public void call() {
                             if (FetchStatus.PAUSE.equals(saveProperty.getSaveStatus())) {
                                 SaveExecutor.reportPause(saveProperty);
+                            } else {
+                                if (FetchStatus.START.equals(saveProperty.getSaveStatus())) {
+                                    try {
+                                        mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE);
+                                    } catch (SaveException e) {
+                                        SaveExecutor.reportError(saveProperty.getTaskId(), FetchError.RECORD_ERR);
+                                        return;
+                                    }
+                                    SaveExecutor.reportPause(saveProperty);
+                                }
                             }
                         }
                     }, new Action0() {

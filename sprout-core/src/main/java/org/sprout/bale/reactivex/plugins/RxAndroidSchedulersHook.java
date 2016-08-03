@@ -22,13 +22,13 @@ public class RxAndroidSchedulersHook {
     private static final RxAndroidSchedulersHook DEFAULT_INSTANCE = new RxAndroidSchedulersHook();
 
     public static RxAndroidSchedulersHook getDefaultInstance() {
-      return DEFAULT_INSTANCE;
+        return DEFAULT_INSTANCE;
     }
 
     /**
      * Scheduler to return from {@link AndroidSchedulers#mainThread()} or {@code null} if default
      * should be used.
-     * <p>
+     * <p/>
      * This instance should be or behave like a stateless singleton.
      */
     public Scheduler getMainThreadScheduler() {

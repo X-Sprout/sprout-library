@@ -12,9 +12,8 @@ android {
 }
 
 repositories {
-    maven { url 'https://jitpack.io' }
 }
 
 dependencies {
-    compile 'com.github.orhanobut:logger:1.12'
+    compile 'com.orhanobut:logger:1.15'
 }

@@ -4,6 +4,8 @@
 package org.sprout.core.assist;
 
 import android.content.Context;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.telephony.TelephonyManager;
 
@@ -42,6 +44,40 @@ public final class DevUtils {
     }
 
     /**
+     * 获得设备制造商
+     *
+     * @return 制造商
+     * @author Wythe
+     */
+    public static String getOem() {
+        final String oem = Build.MANUFACTURER;
+        if (StringUtils.isEmpty(oem)) {
+            return null;
+        }
+        return oem.trim();
+    }
+
+    /**
+     * 获得设备MAC地址
+     *
+     * @return MAC地址
+     * @author Wythe
+     */
+    public static String getMac() {
+        final Context context = SproutLib.getContext();
+        if (context != null) {
+            final WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            if (wifiManager != null) {
+                final WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                if (wifiInfo != null) {
+                    return wifiInfo.getMacAddress();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * 获得设备IMEI号码
      *
      * @return IMEI号码
@@ -67,6 +103,20 @@ public final class DevUtils {
             return null;
         }
         return telephonyManager.getSubscriberId();
+    }
+
+    /**
+     * 获得设备型号名称
+     *
+     * @return 型号名称
+     * @author Wythe
+     */
+    public static String getModel() {
+        final String model = Build.MODEL;
+        if (StringUtils.isEmpty(model)) {
+            return null;
+        }
+        return model.trim();
     }
 
     private enum DevManager {

@@ -13,28 +13,70 @@
  */
 package org.sprout.bale.reactivex.schedulers;
 
-import android.os.Handler;
 import android.os.Looper;
 
 import org.sprout.bale.reactivex.plugins.RxAndroidPlugins;
+import org.sprout.bale.reactivex.plugins.RxAndroidSchedulersHook;
+
+import java.util.concurrent.atomic.AtomicReference;
 
 import rx.Scheduler;
+import rx.annotations.Experimental;
 
-/** Android-specific Schedulers. */
+/**
+ * Android-specific Schedulers.
+ */
 public final class AndroidSchedulers {
+    private static final AtomicReference<AndroidSchedulers> INSTANCE = new AtomicReference<>();
+
+    private final Scheduler mainThreadScheduler;
+
+    private static AndroidSchedulers getInstance() {
+        for (; ; ) {
+            AndroidSchedulers current = INSTANCE.get();
+            if (current != null) {
+                return current;
+            }
+            current = new AndroidSchedulers();
+            if (INSTANCE.compareAndSet(null, current)) {
+                return current;
+            }
+        }
+    }
+
     private AndroidSchedulers() {
-        throw new AssertionError("No instances");
+        RxAndroidSchedulersHook hook = RxAndroidPlugins.getInstance().getSchedulersHook();
+
+        Scheduler main = hook.getMainThreadScheduler();
+        if (main != null) {
+            mainThreadScheduler = main;
+        } else {
+            mainThreadScheduler = new LooperScheduler(Looper.getMainLooper());
+        }
     }
 
-    // See https://github.com/ReactiveX/RxAndroid/issues/238
-    // https://en.wikipedia.org/wiki/Initialization-on-demand_holder_idiom
-    private static class MainThreadSchedulerHolder {
-        static final Scheduler MAIN_THREAD_SCHEDULER = new HandlerScheduler(new Handler(Looper.getMainLooper()));
-    }
-
-    /** A {@link Scheduler} which executes actions on the Android UI thread. */
+    /**
+     * A {@link Scheduler} which executes actions on the Android UI thread.
+     */
     public static Scheduler mainThread() {
-        final Scheduler scheduler = RxAndroidPlugins.getInstance().getSchedulersHook().getMainThreadScheduler();
-        return scheduler != null ? scheduler : MainThreadSchedulerHolder.MAIN_THREAD_SCHEDULER;
+        return getInstance().mainThreadScheduler;
+    }
+
+    /**
+     * A {@link Scheduler} which executes actions on {@code looper}.
+     */
+    public static Scheduler from(Looper looper) {
+        if (looper == null) throw new NullPointerException("looper == null");
+        return new LooperScheduler(looper);
+    }
+
+    /**
+     * Resets the current {@link AndroidSchedulers} instance.
+     * This will re-init the cached schedulers on the next usage,
+     * which can be useful in testing.
+     */
+    @Experimental
+    public static void reset() {
+        INSTANCE.set(null);
     }
 }

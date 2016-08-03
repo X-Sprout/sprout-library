@@ -15,7 +15,7 @@ package org.sprout.bale.reactivex.plugins;
 
 import java.util.concurrent.atomic.AtomicReference;
 
-import rx.annotations.Beta;
+import rx.annotations.Experimental;
 
 /**
  * Registry for plugin implementations that allows global override and handles the retrieval of
@@ -39,10 +39,10 @@ public final class RxAndroidPlugins {
 
     /**
      * Reset any explicit or default-set hooks.
-     * <p>
+     * <p/>
      * Note: This should only be used for testing purposes.
      */
-    @Beta
+    @Experimental
     public void reset() {
         schedulersHook.set(null);
     }
@@ -50,7 +50,7 @@ public final class RxAndroidPlugins {
     /**
      * Retrieves the instance of {@link RxAndroidSchedulersHook} to use based on order of
      * precedence as defined in the {@link RxAndroidPlugins} class header.
-     * <p>
+     * <p/>
      * Override the default by calling {@link #registerSchedulersHook(RxAndroidSchedulersHook)} or by
      * setting the property {@code rxandroid.plugin.RxAndroidSchedulersHook.implementation} with the
      * full classname to load.
@@ -69,12 +69,11 @@ public final class RxAndroidPlugins {
      * injected or default implementations.
      *
      * @throws IllegalStateException if called more than once or after the default was initialized
-     * (if usage occurs before trying to register)
+     *                               (if usage occurs before trying to register)
      */
     public void registerSchedulersHook(RxAndroidSchedulersHook impl) {
         if (!schedulersHook.compareAndSet(null, impl)) {
-            throw new IllegalStateException(
-                    "Another strategy was already registered: " + schedulersHook.get());
+            throw new IllegalStateException("Another strategy was already registered: " + schedulersHook.get());
         }
     }
 }
