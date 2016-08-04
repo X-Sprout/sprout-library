@@ -26,7 +26,6 @@ import rx.Scheduler;
 import rx.Subscription;
 import rx.exceptions.OnErrorNotImplementedException;
 import rx.functions.Action0;
-import rx.plugins.RxJavaPlugins;
 import rx.subscriptions.Subscriptions;
 
 class LooperScheduler extends Scheduler {
@@ -117,7 +116,6 @@ class LooperScheduler extends Scheduler {
                 } else {
                     ie = new IllegalStateException("Fatal Exception thrown on Scheduler.Worker thread.", e);
                 }
-                RxJavaPlugins.getInstance().getErrorHandler().handleError(ie);
                 Thread thread = Thread.currentThread();
                 thread.getUncaughtExceptionHandler().uncaughtException(thread, ie);
             }

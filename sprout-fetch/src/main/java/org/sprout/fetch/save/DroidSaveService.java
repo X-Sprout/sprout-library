@@ -24,6 +24,7 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingDeque;
 
 import rx.Observable;
 import rx.functions.Action0;
@@ -60,9 +61,9 @@ public final class DroidSaveService extends Service {
 
     private SaveRecorder mSaveRecorder;
 
-    private volatile Deque<SaveScheduler> mSchedulerList = new LinkedList<>();
+    private final Deque<SaveScheduler> mSchedulerList = new LinkedBlockingDeque<>();
 
-    private volatile Map<String, SaveSubscription> mSubscriptionMap = new ConcurrentHashMap<>();
+    private final Map<String, SaveSubscription> mSubscriptionMap = new ConcurrentHashMap<>();
 
     @Override
     public int onStartCommand(final Intent intent, final int flags, final int startId) {
@@ -91,23 +92,17 @@ public final class DroidSaveService extends Service {
                             switch (command) {
                                 // 监听下载
                                 case COMMAND_WATCH: {
-                                    synchronized (this.mSchedulerList) {
-                                        this.watchSave(saveId);
-                                    }
+                                    this.watchSave(saveId);
                                     break;
                                 }
                                 // 暂停下载
                                 case COMMAND_PAUSE: {
-                                    synchronized (this.mSchedulerList) {
-                                        this.pauseSave(saveId);
-                                    }
+                                    this.pauseSave(saveId);
                                     break;
                                 }
                                 // 取消下载
                                 case COMMAND_CANCEL: {
-                                    synchronized (this.mSchedulerList) {
-                                        this.clearSave(saveId);
-                                    }
+                                    this.clearSave(saveId);
                                     break;
                                 }
                             }
@@ -116,10 +111,9 @@ public final class DroidSaveService extends Service {
                             final String fileUrl = intent.getStringExtra(INTENT_SAVE_URL_KEY);
                             final String savePath = intent.getStringExtra(INTENT_SAVE_PATH_KEY);
                             if (!StringUtils.isEmpty(fileUrl) && !StringUtils.isEmpty(savePath)) {
-                                final SaveScheduler saveScheduler = new SaveScheduler(saveId, fileUrl, savePath, intent.getIntExtra(INTENT_SAVE_RETRY_KEY, 0), intent.getIntExtra(INTENT_SAVE_PRIOR_KEY, 0), intent.getIntExtra(INTENT_SAVE_TIMEOUT_KEY, 0));
-                                synchronized (this.mSchedulerList) {
-                                    this.startSave(saveScheduler);
-                                }
+                                this.startSave(new SaveScheduler(
+                                        saveId, fileUrl, savePath, intent.getIntExtra(INTENT_SAVE_RETRY_KEY, 0), intent.getIntExtra(INTENT_SAVE_PRIOR_KEY, 0), intent.getIntExtra(INTENT_SAVE_TIMEOUT_KEY, 0)
+                                ));
                             }
                         }
                     }
@@ -363,17 +357,22 @@ public final class DroidSaveService extends Service {
             if (FetchService.getSaveQueue() < this.mSchedulerList.size()) {
                 final SaveScheduler wipeScheduler = mSchedulerList.removeFirst();
                 if (wipeScheduler != null) {
-                    // 队列异常
-                    boolean update = true;
-                    try {
-                        this.mSaveRecorder.updateSaveStatus(wipeScheduler.saveId, FetchStatus.ERROR);
-                    } catch (SaveException e) {
-                        update = false;
-                    } finally {
-                        if (update) {
-                            SaveExecutor.reportError(wipeScheduler.saveId, FetchError.QUEUE_ERR);
-                        } else {
-                            SaveExecutor.reportError(wipeScheduler.saveId, FetchError.RECORD_ERR);
+                    final SaveProperty wipeProperty = this.mSaveRecorder.selectRecorder(wipeScheduler.saveId);
+                    if (wipeProperty == null) {
+                        SaveExecutor.reportError(wipeScheduler.saveId, FetchError.RECORD_ERR);
+                    } else {
+                        // 队列异常
+                        boolean update = true;
+                        try {
+                            this.mSaveRecorder.updateSaveStatus(wipeProperty, FetchStatus.ERROR);
+                        } catch (SaveException e) {
+                            update = false;
+                        } finally {
+                            if (update) {
+                                SaveExecutor.reportError(wipeScheduler.saveId, FetchError.QUEUE_ERR);
+                            } else {
+                                SaveExecutor.reportError(wipeScheduler.saveId, FetchError.RECORD_ERR);
+                            }
                         }
                     }
                 }
@@ -529,18 +528,21 @@ public final class DroidSaveService extends Service {
                     final Observable<SaveProperty> observable = SaveExecutor.observableDownLoad(saveRecorder, saveProperty, new Action0() {
                         @Override
                         public void call() {
+                            // 更新状态
+                            if (FetchStatus.AWAIT.equals(saveProperty.getSaveStatus())) {
+                                try {
+                                    mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.START);
+                                } catch (SaveException e) {
+                                    throw new RuntimeException(e);
+                                }
+                                SaveExecutor.reportStart(saveProperty);
+                            }
+                        }
+                    }, new Action0() {
+                        @Override
+                        public void call() {
                             if (FetchStatus.PAUSE.equals(saveProperty.getSaveStatus())) {
                                 SaveExecutor.reportPause(saveProperty);
-                            } else {
-                                if (FetchStatus.START.equals(saveProperty.getSaveStatus())) {
-                                    try {
-                                        mSaveRecorder.updateSaveStatus(saveProperty, FetchStatus.PAUSE);
-                                    } catch (SaveException e) {
-                                        SaveExecutor.reportError(saveProperty.getTaskId(), FetchError.RECORD_ERR);
-                                        return;
-                                    }
-                                    SaveExecutor.reportPause(saveProperty);
-                                }
                             }
                         }
                     }, new Action0() {
@@ -573,14 +575,10 @@ public final class DroidSaveService extends Service {
         @Override
         public void onTime() {
             if (mSaveRecorder != null && !mSaveRecorder.isShut()) {
-                if (FetchService.getSaveThread() > mSubscriptionMap.size()) {
-                    synchronized (mSchedulerList) {
-                        if (mSchedulerList.size() > 0) {
-                            final SaveScheduler saveScheduler = mSchedulerList.removeLast();
-                            if (saveScheduler != null) {
-                                registSaveSubscription(mSaveRecorder, saveScheduler);
-                            }
-                        }
+                if (FetchService.getSaveThread() > mSubscriptionMap.size() && mSchedulerList.size() > 0) {
+                    final SaveScheduler saveScheduler = mSchedulerList.removeLast();
+                    if (saveScheduler != null) {
+                        registSaveSubscription(mSaveRecorder, saveScheduler);
                     }
                 }
             }

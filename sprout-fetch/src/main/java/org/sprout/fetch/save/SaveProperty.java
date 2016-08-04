@@ -13,23 +13,23 @@ import org.sprout.fetch.spec.FetchStatus;
 public class SaveProperty extends FetchProperty {
 
     // 下载超时时长
-    private int saveTimeout;
+    private volatile int saveTimeout;
     // 下载重试次数
-    private int saveRetry;
+    private volatile int saveRetry;
     // 下载文件时间
-    private long saveTime;
+    private volatile long saveTime;
     // 网络文件大小
-    private long fileSize;
+    private volatile long fileSize;
     // 下载文件大小
-    private long saveSize;
+    private volatile long saveSize;
     // 网络文件地址
-    private String saveUrl;
+    private volatile String saveUrl;
     // 保存文件路径
-    private String savePath;
+    private volatile String savePath;
     // 下载优先等级
-    private FetchPrior savePrior = FetchPrior.NORM;
+    private volatile FetchPrior savePrior = FetchPrior.NORM;
     // 下载文件状态
-    private FetchStatus saveStatus = FetchStatus.AWAIT;
+    private volatile FetchStatus saveStatus = FetchStatus.AWAIT;
 
     public SaveProperty(final String saveId) {
         super(saveId);

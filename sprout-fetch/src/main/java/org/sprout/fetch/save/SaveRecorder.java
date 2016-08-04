@@ -261,25 +261,6 @@ public final class SaveRecorder {
     /**
      * 更新下载状态
      *
-     * @param saveId     下载标识
-     * @param saveStatus 下载状态
-     * @return 下载属性
-     * @author Cuzki
-     */
-    @SuppressWarnings("unchecked")
-    SaveProperty updateSaveStatus(final String saveId, final FetchStatus saveStatus) throws SaveException {
-        if (!StringUtils.isEmpty(saveId) && saveStatus != null) {
-            if (this.isShut()) {
-                throw new SaveException(saveId, FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage());
-            }
-            return this.updateSaveStatus(decapsulate(this.mCacheHandle.get(saveId)), saveStatus);
-        }
-        return null;
-    }
-
-    /**
-     * 更新下载状态
-     *
      * @param saveProperty 下载属性
      * @param saveStatus   下载状态
      * @return 下载属性

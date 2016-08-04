@@ -142,6 +142,34 @@ final class SaveExecutor {
     }
 
     /**
+     * 下载开始通知
+     *
+     * @param property 下载属性
+     * @author Wythe
+     */
+    static void reportStart(final SaveProperty property) {
+        if (property != null) {
+            final Set<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
+            if (!CollectionUtils.isEmpty(callbackList)) {
+                for (final SaveListener saveListener : callbackList) {
+                    if (saveListener != null) {
+                        try {
+                            saveListener.onStart(property);
+                        } catch (Exception e) {
+                            if (Lc.E) {
+                                Lc.t(SproutLib.name).e("FetchService save start callback exception.", e);
+                            }
+                        }
+                    }
+                }
+            }
+            if (Lc.D) {
+                Lc.t(SproutLib.name).d("FetchService save start: " + property.getTaskId());
+            }
+        }
+    }
+
+    /**
      * 下载暂停通知
      *
      * @param property 下载属性
@@ -230,11 +258,11 @@ final class SaveExecutor {
      * @author Cuzki
      */
     @SuppressWarnings("unchecked")
-    static Observable<SaveProperty> observableDownLoad(final SaveRecorder recorder, final SaveProperty property, final Action0 unscheduler, final Action0 onterminate) {
-        return recorder == null || property == null || unscheduler == null ? null : Observable.create(new Observable.OnSubscribe<SaveProperty>() {
+    static Observable<SaveProperty> observableDownLoad(final SaveRecorder recorder, final SaveProperty property, final Action0 onscheduler, final Action0 unscheduler, final Action0 onterminate) {
+        return recorder == null || property == null ? null : Observable.create(new Observable.OnSubscribe<SaveProperty>() {
             @Override
             public void call(final Subscriber<? super SaveProperty> subscriber) {
-                if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+                if (!FetchStatus.START.equals(property.getSaveStatus())) {
                     subscriber.onCompleted();
                 } else {
                     try {
@@ -254,78 +282,54 @@ final class SaveExecutor {
                     }
                 }
             }
-        }).doOnTerminate(onterminate).doOnUnsubscribe(unscheduler).subscribeOn(Schedulers.io()).onBackpressureLatest().doOnError(new Action1<Throwable>() {
-            @Override
-            public void call(final Throwable throwable) {
-                // 下载异常
-                final String saveId = property.getTaskId();
-                if (!StringUtils.isEmpty(saveId)) {
-                    boolean trouble = false;
-                    if (!FetchStatus.FINISH.equals(property.getSaveStatus())) {
-                        try {
-                            recorder.updateSaveStatus(property, FetchStatus.ERROR);
-                        } catch (SaveException e) {
-                            trouble = true;
-                        }
-                    }
-                    // 异常通知
-                    final Set<SaveListener> callbackList = SaveObserver.searchListener(saveId);
-                    if (callbackList != null) {
-                        if (callbackList.size() > 0) {
-                            final SaveException report = trouble ? new SaveException(saveId, FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), throwable) : (
-                                    SaveException.class.isInstance(throwable) ? (SaveException) throwable : new SaveException(
-                                            saveId, FetchError.UNKNOWN_ERR.getCode(), FetchError.UNKNOWN_ERR.getMessage(), throwable
-                                    )
-                            );
-                            for (final SaveListener callback : callbackList) {
-                                if (callback != null) {
-                                    try {
-                                        callback.onError(report);
-                                    } catch (Exception e) {
-                                        if (Lc.E) {
-                                            Lc.t(SproutLib.name).e("FetchService save error callback exception.", e);
+        }).doOnTerminate(onterminate)
+                .doOnSubscribe(onscheduler)
+                .doOnUnsubscribe(unscheduler)
+                .subscribeOn(Schedulers.io())
+                .onBackpressureLatest()
+                .doOnError(new Action1<Throwable>() {
+                    @Override
+                    public void call(final Throwable throwable) {
+                        // 下载异常
+                        final String saveId = property.getTaskId();
+                        if (!StringUtils.isEmpty(saveId)) {
+                            boolean trouble = false;
+                            if (!FetchStatus.FINISH.equals(property.getSaveStatus())) {
+                                try {
+                                    recorder.updateSaveStatus(property, FetchStatus.ERROR);
+                                } catch (SaveException e) {
+                                    trouble = true;
+                                }
+                            }
+                            // 异常通知
+                            final Set<SaveListener> callbackList = SaveObserver.searchListener(saveId);
+                            if (!CollectionUtils.isEmpty(callbackList)) {
+                                final SaveException report = trouble ? new SaveException(saveId, FetchError.RECORD_ERR.getCode(), FetchError.RECORD_ERR.getMessage(), throwable) : (
+                                        SaveException.class.isInstance(throwable) ? (SaveException) throwable : new SaveException(
+                                                saveId, FetchError.UNKNOWN_ERR.getCode(), FetchError.UNKNOWN_ERR.getMessage(), throwable
+                                        )
+                                );
+                                Observable.from(callbackList).subscribe(new Action1<SaveListener>() {
+                                    @Override
+                                    public void call(final SaveListener saveListener) {
+                                        if (saveListener != null) {
+                                            try {
+                                                saveListener.onError(report);
+                                            } catch (Exception e) {
+                                                if (Lc.E) {
+                                                    Lc.t(SproutLib.name).e("FetchService save error callback exception.", e);
+                                                }
+                                            }
                                         }
                                     }
-                                }
+                                });
                             }
                         }
-                    }
-                }
-                if (Lc.E) {
-                    Lc.t(SproutLib.name).e("FetchService save error: " + saveId + (throwable == null ? "" : " -> " + ErrorUtils.getCause(throwable)));
-                }
-            }
-        }).doOnSubscribe(new Action0() {
-            @Override
-            public void call() {
-                if (FetchStatus.AWAIT.equals(property.getSaveStatus())) {
-                    // 更新状态
-                    try {
-                        recorder.updateSaveStatus(property, FetchStatus.START);
-                    } catch (SaveException e) {
-                        throw new RuntimeException(e);
-                    }
-                    // 启动通知
-                    final Set<SaveListener> callbackList = SaveObserver.searchListener(property.getTaskId());
-                    if (!CollectionUtils.isEmpty(callbackList)) {
-                        for (final SaveListener saveListener : callbackList) {
-                            if (saveListener != null) {
-                                try {
-                                    saveListener.onStart(property);
-                                } catch (Exception e) {
-                                    if (Lc.E) {
-                                        Lc.t(SproutLib.name).e("FetchService save start callback exception.", e);
-                                    }
-                                }
-                            }
+                        if (Lc.E) {
+                            Lc.t(SproutLib.name).e("FetchService save error: " + saveId + (throwable == null ? "" : " -> " + ErrorUtils.getCause(throwable)));
                         }
                     }
-                    if (Lc.D) {
-                        Lc.t(SproutLib.name).d("FetchService save start: " + property.getTaskId());
-                    }
-                }
-            }
-        });
+                });
     }
 
     private static void downloadFile(final SaveRecorder recorder, final SaveProperty property, final Subscriber<SaveProperty> subscriber) {
@@ -426,7 +430,7 @@ final class SaveExecutor {
             }
         } else {
             // 更新缓存大小
-            if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+            if (!FetchStatus.START.equals(property.getSaveStatus())) {
                 subscriber.onCompleted();
                 return;
             } else {
@@ -590,7 +594,7 @@ final class SaveExecutor {
             return;
         }
         // 首次下载文件
-        if (FetchStatus.PAUSE.equals(property.getSaveStatus())) {
+        if (!FetchStatus.START.equals(property.getSaveStatus())) {
             subscriber.onCompleted();
             return;
         } else {
