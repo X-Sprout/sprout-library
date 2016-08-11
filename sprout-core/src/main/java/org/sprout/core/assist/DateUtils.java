@@ -9,6 +9,6 @@ package org.sprout.core.assist;
  *
  * @author Wythe
  */
-public class DateUtils {
+public final class DateUtils {
 
 }

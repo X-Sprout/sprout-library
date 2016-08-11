@@ -21,7 +21,7 @@ import java.lang.reflect.Method;
  *
  * @author Wythe
  */
-public final class NetUtils {
+public final class NetworkUtils {
 
     private final static String GPRS_ENABLED = "mobile_data";
     private final static String GPRS_REFLECT = "setMobileDataEnabled";

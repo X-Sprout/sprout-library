@@ -93,10 +93,6 @@ public class SaveProperty extends FetchProperty {
         this.saveSize = saveSize;
     }
 
-    void addSaveSize(final long saveSize) {
-        this.saveSize += saveSize;
-    }
-
     void setSaveUrl(final String saveUrl) {
         this.saveUrl = saveUrl;
     }
@@ -111,12 +107,6 @@ public class SaveProperty extends FetchProperty {
                 this.savePrior = prior;
                 break;
             }
-        }
-    }
-
-    void setSavePrior(final FetchPrior savePrior) {
-        if (savePrior != null) {
-            this.savePrior = savePrior;
         }
     }
 

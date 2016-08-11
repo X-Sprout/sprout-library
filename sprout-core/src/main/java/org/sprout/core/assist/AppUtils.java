@@ -8,8 +8,6 @@ import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.os.Build;
-import android.os.PowerManager;
 
 import org.sprout.SproutLib;
 
@@ -17,7 +15,7 @@ import java.util.List;
 
 /**
  * 应用工具类
- * <p/>
+ * <p>
  *
  * @author Wythe
  */
@@ -199,27 +197,6 @@ public final class AppUtils {
     }
 
     /**
-     * 屏幕是否点亮
-     *
-     * @return 屏幕是否点亮
-     * @author Wythe
-     */
-    public static boolean isScreenon() {
-        final Context context = SproutLib.getContext();
-        if (context != null) {
-            final PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-            if (powerManager != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
-                    return powerManager.isInteractive();
-                } else {
-                    return powerManager.isScreenOn();
-                }
-            }
-        }
-        return false;
-    }
-
-    /**
      * 是否前台运行
      *
      * @return 是否在前台运行
@@ -234,7 +211,7 @@ public final class AppUtils {
                 if (appProcesses != null && appProcesses.size() > 0) {
                     for (final ActivityManager.RunningAppProcessInfo appProcess : appProcesses) {
                         if (appProcess != null && appProcess.processName.equals(context.getPackageName())) {
-                            return ((ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND == appProcess.importance) && AppUtils.isScreenon());
+                            return ((ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND == appProcess.importance) && ScreenUtils.isOpenScreen());
                         }
                     }
                 }

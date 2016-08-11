@@ -6,7 +6,7 @@ package org.sprout.fetch.save;
 import org.sprout.SproutLib;
 import org.sprout.core.assist.CollectionUtils;
 import org.sprout.core.assist.ErrorUtils;
-import org.sprout.core.assist.NetUtils;
+import org.sprout.core.assist.NetworkUtils;
 import org.sprout.core.assist.StringUtils;
 import org.sprout.core.logging.Lc;
 import org.sprout.fetch.spec.FetchError;
@@ -451,7 +451,7 @@ final class SaveExecutor {
 
     private static void downloadFile(final SaveRecorder recorder, final SaveProperty property, final Subscriber<SaveProperty> subscriber, final int saveRetry, final File saveFile, final File tempFile) {
         // 网络检测
-        if (!NetUtils.isConnected(true)) {
+        if (!NetworkUtils.isConnected(true)) {
             // 网络异常
             try {
                 recorder.updateSaveStatus(property, FetchStatus.ERROR);
