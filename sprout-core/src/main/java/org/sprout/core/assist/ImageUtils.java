@@ -10,6 +10,7 @@ import android.graphics.Canvas;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.util.Base64;
 
 import org.sprout.SproutLib;
 
@@ -65,6 +66,51 @@ public final class ImageUtils {
             bitmap.compress(format, quality, baos);
         }
         return baos.toByteArray();
+    }
+
+    /**
+     * 图片对象转化为Base64编码
+     * (默认高品质)
+     *
+     * @param bitmap 图片对象
+     * @param format 图片格式
+     * @return Base64编码
+     * @author Wythe
+     */
+    public static String bitmap2Base64(final Bitmap bitmap, final Bitmap.CompressFormat format) {
+        return ImageUtils.bitmap2Base64(bitmap, format, 100);
+    }
+
+    /**
+     * 图片对象转化为Base64编码
+     *
+     * @param bitmap  图片对象
+     * @param format  图片格式
+     * @param quality 图片品质(0-100)
+     * @return Base64编码
+     * @author Wythe
+     */
+    public static String bitmap2Base64(final Bitmap bitmap, final Bitmap.CompressFormat format, final int quality) {
+        return ImageUtils.bitmap2Base64(bitmap, format, quality, Base64.DEFAULT);
+    }
+
+    /**
+     * 图片对象转化为Base64编码
+     *
+     * @param bitmap  图片对象
+     * @param format  图片格式
+     * @param quality 图片品质(0-100)
+     * @param enctype 编码方式
+     * @return Base64编码
+     * @author Wythe
+     */
+    public static String bitmap2Base64(final Bitmap bitmap, final Bitmap.CompressFormat format, final int quality, final int enctype) {
+        final byte[] bytes = ImageUtils.bitmap2Bytes(bitmap, format, quality);
+        if (ArrayUtils.isEmpty(bytes)) {
+            return StringUtils.EMPTY;
+        } else {
+            return Base64.encodeToString(bytes, enctype);
+        }
     }
 
     /**
