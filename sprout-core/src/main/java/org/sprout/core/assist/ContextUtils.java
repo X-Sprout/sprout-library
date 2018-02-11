@@ -23,15 +23,18 @@ public final class ContextUtils {
      * @author Wythe
      */
     public static Activity getActivity(final Context context) {
+        if (context instanceof Activity) {
+            return (Activity) context;
+        }
+        // 递归转换
         Context base = context;
-        do {
-            if (!(base instanceof ContextWrapper)) {
-                return null;
-            }
+        while (base instanceof ContextWrapper) {
             base = ((ContextWrapper) base).getBaseContext();
-        } while (!(base instanceof Activity));
-        // 类型转换
-        return (Activity) base;
+            if (base instanceof Activity) {
+                return (Activity) base;
+            }
+        }
+        return null;
     }
 
 }
