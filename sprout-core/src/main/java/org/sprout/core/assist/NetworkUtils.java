@@ -180,6 +180,21 @@ public final class NetworkUtils {
     }
 
     /**
+     * 检测是否Ethernet网络联网
+     *
+     * @param www 是否外网
+     * @return 是否Ethernet网络联网
+     * @author Wythe
+     */
+    public static boolean isEthernetConnected(final boolean www) {
+        final NetworkInfo netInfo = NetManager.Instance.getInfo();
+        if (netInfo == null || ConnectivityManager.TYPE_ETHERNET != netInfo.getType()) {
+            return false;
+        }
+        return netInfo.isConnected() && (www ? netInfo.isAvailable() : true);
+    }
+
+    /**
      * 检测WIFI是否开启
      *
      * @return 是否开启
